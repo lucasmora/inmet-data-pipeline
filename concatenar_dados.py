@@ -11,7 +11,6 @@ padrao_arquivo = re.compile(r"INMET_(?P<regiao>[A-Z]{1,2})_"
 
 lista_dfs = []
 
-# Abrir pasta
 for arq in os.listdir(caminho_dos_arquivos):
     if arq.endswith(".CSV"):
         caminho_arquivo = os.path.join(caminho_dos_arquivos, arq)
@@ -23,13 +22,14 @@ for arq in os.listdir(caminho_dos_arquivos):
         dados = resultado.groupdict()
         
         df = pd.read_csv(os.path.join(caminho_dos_arquivos, arq), skiprows=8, sep=";", encoding='latin_1')
+        df = df.drop("Unnamed: 19", axis=1)
         df.insert(2, "regiao", dados['regiao'])
         df.insert(3, "estado", dados['estado'])
         df.insert(4, "estacao", dados['estacao'])
         df.insert(5, "cidade", dados['cidade'])
         
         lista_dfs.append(df)
-    
+        
 df_final = pd.concat(lista_dfs, ignore_index=True)
 df_final.to_csv('dados_estacoes.csv')
 print(df_final.shape)
