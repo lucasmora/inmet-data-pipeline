@@ -22,7 +22,7 @@ for arq in os.listdir(caminho_dos_arquivos):
         dados = resultado.groupdict()
         
         df = pd.read_csv(os.path.join(caminho_dos_arquivos, arq), skiprows=8, sep=";", encoding='latin_1')
-        df = df.drop("Unnamed: 19", axis=1)
+        df = df.iloc[:, :-1] # Descarta a última coluna (vazia)
         df.insert(2, "regiao", dados['regiao'])
         df.insert(3, "estado", dados['estado'])
         df.insert(4, "estacao", dados['estacao'])
