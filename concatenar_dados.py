@@ -31,4 +31,5 @@ for arq in os.listdir(caminho_dos_arquivos):
         lista_dfs.append(df)
     
 df_final = pd.concat(lista_dfs, ignore_index=True)
+df_final.to_csv('dados_estacoes.csv')
 print(df_final.shape)
