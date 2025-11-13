@@ -1,5 +1,4 @@
-# 🌦️ Análise de Dados Meteorológicos com Python e Power BI
-### Projeto de consolidação e limpeza de dados do INMET
+# Consolidação e limpeza de dados meteorológicos do INMET com Python
 
 Este projeto tem como objetivo automatizar a **leitura, integração e preparação de dados meteorológicos** fornecidos pelo **INMET (Instituto Nacional de Meteorologia)**.  
 Ele reúne centenas de arquivos CSV em um único dataset padronizado, facilitando análises em ferramentas como **Power BI**, **Excel** ou **Python**.
@@ -17,9 +16,9 @@ Consolidar e preparar dados climáticos de diferentes estações do Brasil, perm
 ```
 📁 meteorologia/
 ├── concatena_dados.py        # Extrai e une os arquivos CSV brutos
-├── limpeza_dados.py          # (Em desenvolvimento) Limpa e padroniza os dados
+├── limpeza_dados.py          # Limpa e padroniza os dados
 ├── dados_estacoes.csv        # Saída gerada após a concatenação
-└── dados_estacoes_limpos.csv # Saída final após limpeza (em breve)
+└── dados_estacoes_limpo.csv  # Saída final após limpeza
 ```
 
 ---
@@ -36,13 +35,13 @@ Consolidar e preparar dados climáticos de diferentes estações do Brasil, perm
 
 ### 2. Limpeza e Padronização (`limpeza_dados.py`)
 
-Esta etapa (em desenvolvimento) fará a **limpeza e transformação** do dataset gerado, preparando-o para análise em ferramentas de Business Intelligence.
+Esta etapa faz a **limpeza e transformação** do dataset gerado, preparando-o para análise em ferramentas de Business Intelligence.
 
 Objetivos:
 - Padronizar nomes de colunas (sem espaços, acentos e caracteres especiais);  
 - Converter formatos numéricos (ex.: “12,3” → 12.3);  
-- Corrigir tipos de dados e tratar valores ausentes;  
-- Gerar uma saída final: `dados_estacoes_limpos.csv`.
+- Corrigir tipos de dados;  
+- Gerar uma saída final: `dados_estacoes_limpo.csv`.
 
 ---
 
@@ -56,14 +55,14 @@ Cada arquivo contém registros horários com variáveis como:
 |-----------|------------|
 | `Data` | Data da observação |
 | `Hora (UTC)` | Horário da coleta |
-| `PRECIPITAÇÃO TOTAL (mm)` | Quantidade de chuva registrada |
-| `PRESSÃO ATMOSFERICA (hPa)` | Pressão atmosférica ao nível da estação |
-| `RADIACAO GLOBAL (KJ/m²)` | Energia solar recebida |
-| `TEMPERATURA DO AR (°C)` | Temperatura instantânea do ar |
-| `TEMPERATURA MÁXIMA (°C)` | Temperatura máxima diária |
-| `TEMPERATURA MÍNIMA (°C)` | Temperatura mínima diária |
-| `UMIDADE RELATIVA (%)` | Umidade relativa do ar |
-| `VENTO (m/s)` | Velocidade do vento |
+| `PRECIPITAÇÃO TOTAL, HORÁRIO (mm)` | Quantidade de chuva registrada |
+| `PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)` | Pressão atmosférica ao nível da estação |
+| `RADIACAO GLOBAL (Kj/m²)` | Energia solar recebida |
+| `TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)` | Temperatura instantânea do ar |
+| `TEMPERATURA MÁXIMA NA HORA ANT. (AUT) (°C)` | Temperatura máxima registrada na hora anterior |
+| `TEMPERATURA MÍNIMA NA HORA ANT. (AUT) (°C)` | Temperatura mínima registrada na hora anterior |
+| `UMIDADE RELATIVA DO AR, HORARIA (%)` | Umidade relativa do ar |
+| `VENTO, VELOCIDADE HORARIA (m/s)` | Velocidade do vento |
 
 Essas variáveis permitem análises sobre:
 - Variação de temperatura e umidade ao longo do tempo;  
@@ -106,7 +105,7 @@ Essas variáveis permitem análises sobre:
         ↓
  concatena_dados.py  →  dados_estacoes.csv
         ↓
- limpeza_dados.py    →  dados_estacoes_limpos.csv
+ limpeza_dados.py    →  dados_estacoes_limpo.csv
         ↓
    Power BI / Análises
 ```

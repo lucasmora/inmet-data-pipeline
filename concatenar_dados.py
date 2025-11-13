@@ -32,4 +32,4 @@ for arq in os.listdir(caminho_dos_arquivos):
         
 df_final = pd.concat(lista_dfs, ignore_index=True)
 df_final.to_csv('dados_estacoes.csv')
-print(df_final.shape)
+print(f'{df_final.shape[1]} colunas e {df_final.shape[0]} linhas processadas.')
