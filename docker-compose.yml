@@ -1,0 +1,25 @@
+# TimescaleDB para o projeto inmet-data-pipeline
+# Sobe um PostgreSQL 17 + extensão TimescaleDB já compilada.
+# Acesse pelo Windows em: localhost:5433
+# (5432 interno do container -> 5433 exposto no Windows, pra nao conflitar
+#  com o PostgreSQL nativo do Lucas que ja ocupa a 5432)
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
+    container_name: inmet-timescaledb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-inmet}
+    ports:
+      - "5433:5432"
+    volumes:
+      # persistencia dos dados (sobrevive a docker compose down)
+      - tsdata:/var/lib/postgresql/data
+      # scripts de inicializacao: rodam so no PRIMEIRO boot
+      - ./init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  tsdata:
