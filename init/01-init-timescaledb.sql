@@ -1,12 +1,8 @@
 -- Roda automaticamente no PRIMEIRO boot do container (docker-entrypoint-initdb.d)
 -- Ordem importa: extensao -> tabela -> hypertable
 
--- 1) Ativa a extensao TimescaleDB
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
--- 2) Recria a tabela do projeto (mesma estrutura de criar_tabela_postgre.sql)
---    Usa TIMESTAMPTZ (dados UTC) e TEXT (recomendacao TimescaleDB) conforme
---    sugerido nos warnings do init.
 DROP TABLE IF EXISTS dados_estacoes;
 
 CREATE TABLE dados_estacoes (
@@ -39,15 +35,29 @@ CREATE TABLE dados_estacoes (
     vento_vel           NUMERIC(4,1)
 );
 
--- 3) Transforma em hypertable (particiona por data_hora = ganho de performance)
---    Isso eh o "pulo do gato" do TimescaleDB para series temporais.
+-- 3) Transforma em hypertable (particiona por data_hora)
 SELECT create_hypertable('dados_estacoes', 'data_hora', if_not_exists => TRUE);
 
--- 4) Tabela de controle de ingestao (retomada idempotente / Big Data)
+-- 4) Tabela de controle de ingestao (retomada idempotente)
 --    Permite reiniciar o pipeline apenas dos arquivos pendentes.
 CREATE TABLE IF NOT EXISTS ingestao_status (
     arquivo        TEXT PRIMARY KEY,
     total_linhas   BIGINT,
     processado_em  TIMESTAMPTZ DEFAULT now(),
     status         TEXT
+);
+
+-- 5) Tabela-dimensao de estacoes (star schema) alimentada por fetch_estacoes.py.
+--    'nome' = DC_NOME do INMET = chave de join com dados_estacoes.cidade.
+--    'cod_estacao' = CD_ESTACAO oficial (so referencia).
+--    Nao eh hypertable: é dimensao pequena (~600 linhas), nao serie temporal.
+CREATE TABLE IF NOT EXISTS estacoes (
+    nome        TEXT PRIMARY KEY,    -- DC_NOME; join com dados_estacoes.cidade
+    cod_estacao TEXT,                -- codigo oficial INMET (CD_ESTACAO)
+    uf          TEXT,                -- SG_ESTADO
+    latitude    DOUBLE PRECISION,    -- VL_LATITUDE
+    longitude   DOUBLE PRECISION,    -- VL_LONGITUDE
+    altitude    DOUBLE PRECISION,    -- VL_ALTITUDE
+    tipo        TEXT,                -- TP_ESTACAO (Automatica/Convencional)
+    situacao    TEXT                 -- CD_SITUACAO (Operante/Pane/...)
 );
