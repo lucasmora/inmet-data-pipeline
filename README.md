@@ -16,11 +16,11 @@ Pipeline **ETL** para dados meteorológicos do **INMET** (Instituto Nacional de 
 
 **Objetivo**
 -----------
-Ingerir de forma incremental, retomável e idempotente milhões de linhas de séries temporais meteorológicas (4,9M+ registros) em um banco particionado por tempo, pronto para *analytics*, com o mínimo de memória e sem dependência de instalação nativa de banco no Windows.
+Ingerir de forma incremental, retomável e idempotente milhões de linhas de séries temporais meteorológicas (4,9M+ registros) em um banco particionado por tempo, consultável em segundos e pronto para *analytics* de série temporal, com o mínimo de memória e sem dependência de instalação nativa de banco no Windows.
 
 **Origem dos Dados**
 -------------------
-Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional de Meteorologia). O portal fornece um arquivo **compactado em ZIP** por estação, contendo **um CSV por dia** para todo o ano. Os arquivos seguem o padrão `INMET_<REGIÃO>_<UF>_<CÓDIGO>_<CIDADE>_<datas>.CSV`, com ~8 linhas de cabeçalho antes dos dados (descartadas via `skiprows=8`), separador `;`, encoding `latin-1` e a última coluna vazia — detalhes que o `transform.py` normaliza.
+Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional de Meteorologia). O portal fornece um arquivo **compactado em ZIP** por estação, contendo **um CSV por dia** para todo o ano. Os arquivos seguem o padrão `INMET_<REGIÃO>_<UF>_<CÓDIGO>_<CIDADE>_<datas>.CSV`, com ~8 linhas de cabeçalho antes dos dados (descartadas via `skiprows=8`), separador `;`, encoding `latin-1` e a última coluna vazia. O parsing é feito **na borda, arquivo a arquivo**: o `transform.py` extrai os metadados (região, UF, código, cidade) do próprio nome do arquivo e normaliza as colunas do formato INMET para o formato canônico da tabela.
 
 **Stack Tecnológico**
 --------------------
@@ -44,20 +44,12 @@ inmet-data-pipeline/
 ├── docker-compose.yml       # TimescaleDB (PostgreSQL 17) em container, porta 5433
 ├── .env.example             # Template de variáveis de ambiente
 ├── LICENSE                  # Licença MIT
-├── init/
+├── db-init/
 │   └── 01-init-timescaledb.sql  # Extensão + hypertable dados_estacoes + ingestao_status + estacoes (dimensão)
 ├── analytics/
-│   ├── EDA_INMET.ipynb          # Análise Exploratória de Dados (SQL + Matplotlib)
+│   ├── EDA_INMET.ipynb          # Análise Exploratória (time_bucket + Matplotlib/Seaborn)
 │   └── export_to_bigquery.py    # Stub de integração com Google BigQuery
 ```
-
-**Arquitetura Big Data (5 Vs)**
------------------------------
-- **Volume** — Ingestão em lotes de 50 mil linhas via *COPY* binário; nunca carrega o dataset inteiro (4,9M linhas) na memória.
-- **Velocity** — *COPY* binário do psycopg3 + *hypertable* particionada por `data_hora` (inserts caem no chunk certo, sem varrer a tabela).
-- **Variety** — Parsing por arquivo na borda: metadados do nome do arquivo + normalização de colunas INMET para o formato canônico da tabela.
-- **Veracity** — Retomada por arquivo (`ingestao_status`) + tipos fortes (`TIMESTAMPTZ`, `NUMERIC`); falhas não corrompem o que já foi ingerido.
-- **Value** — Dado consultável em segundos, particionado, pronto para *analytics* de série temporal.
 
 **Banco de Dados (TimescaleDB via Docker)**
 ------------------------------------------
@@ -71,12 +63,14 @@ O projeto usa **TimescaleDB** (extensão de PostgreSQL para séries temporais) r
    ```bash
    docker compose up -d
    ```
-3. O script em `init/01-init-timescaledb.sql` roda automaticamente no primeiro boot e cria:
+3. O script em `db-init/01-init-timescaledb.sql` roda automaticamente no primeiro boot e cria:
    - a extensão `timescaledb`;
    - a tabela `dados_estacoes` (coluna `data_hora` como `TIMESTAMPTZ`, demais como `TEXT`/`NUMERIC`);
    - a **hypertable** particionada por `data_hora`;
    - a tabela de controle `ingestao_status` (retomada idempotente);
    - a tabela-dimensão `estacoes` (metadados das estações: lat/long/uf/tipo).
+
+Como a **hypertable** é particionada por `data_hora`, os lotes enviados via *COPY* binário caem direto no chunk correto — sem varrer a tabela — o que mantém a ingestão e as consultas rápidas mesmo com milhões de registros.
 
 Conexão a partir do código Python (fora do container):
 ```
@@ -97,9 +91,8 @@ postgresql://postgres:***@localhost:5433/inmet
 
 **Analytics & Cloud Ready**
 ---------------------------
-O projeto agora inclui uma pasta `/analytics` com ferramentas para análise e integração com nuvem:
-- `analytics/consultas.py`: módulo de consultas analíticas (CLI + SQL em `analytics/sql/`), executável via `python -m analytics.consultas`.
-- `analytics/EDA_INMET.ipynb`: Notebook para Análise Exploratória de Dados (EDA) usando queries SQL e visualização com Matplotlib.
+A pasta `/analytics` concentra a análise e a integração com nuvem:
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e visualiza os resultados com Matplotlib/Seaborn (ex.: temperatura média mensal por região, precipitação acumulada por estado).
 - `analytics/export_to_bigquery.py`: *Stub* de integração com Google BigQuery, demonstrando conhecimento em arquitetura Cloud (GCP) e preparação de dados para Data Warehouse.
 
 **Arquitetura Cloud Recomendada**
@@ -133,7 +126,7 @@ docker compose up -d
 pip install -r requirements.txt
 python ingest.py      # lê os CSVs de PASTA_ENTRADA, pula os já ingeridos e insere em lotes via COPY binário
 ```
-O `ingest.py` é **idempotente e retomável**: se falhar no meio, reinicia só dos pendentes (`ingestao_status`).
+O `ingest.py` é **idempotente e retomável**: lê cada CSV em *chunks* e descarrega lotes de 50 mil linhas por vez via *COPY* binário — o dataset completo (4,9M+ registros) nunca fica inteiro na memória. Se falhar no meio, reinicia só dos arquivos pendentes (`ingestao_status`) e nada do que já foi commitado é corrompido.
 
 ### 2b. (Opcional) Popular a dimensão de estações
 ```bash
@@ -141,24 +134,10 @@ python fetch_estacoes.py   # puxa metadados do INMET -> tabela 'estacoes' (lat/l
 ```
 Útil para mapas e filtros no Power BI/Metabase. Idempotente (UPSERT).
 
-### 3. Consultar (analytics temporais)
+### 3. Análise Exploratória (EDA)
+Abra o notebook de análise em `analytics/EDA_INMET.ipynb`:
 ```bash
-python -m analytics.consultas   # roda as consultas analíticas do módulo
-```
-
-**Consultas Analíticas** (`analytics/consultas.py`)
-------------------------------------------------------
-As consultas vivem em `analytics/consultas.py` e leem o SQL de `analytics/sql/` — a **fonte única** do SQL, reutilizável diretamente no Metabase/BI.
-
-| Função | Recurso demonstrado |
-|--------|---------------------|
-| `precipitacao_media_por_regiao` | `avg(precipitacao)` por região — média de precipitação (somente não-nulas) |
-
-Uso da CLI:
-```bash
-python -m analytics.consultas                 # roda todas as consultas
-python -m analytics.consultas --list          # lista as consultas disponíveis
-python -m analytics.consultas <nome>          # roda uma consulta específica
+jupyter notebook analytics/EDA_INMET.ipynb
 ```
 
 **Variáveis de Ambiente**
@@ -173,6 +152,7 @@ python -m analytics.consultas <nome>          # roda uma consulta específica
 | `PASTA_ENTRADA` | `C:\Users\moral\Downloads\meteorologia` | Pasta com os CSVs do INMET (arquivos `*.CSV`) |
 | `BATCH_SIZE` | `50000` | Linhas por lote no COPY binário |
 | `CHUNK_SIZE` | `100000` | Linhas por chunk do `read_csv` |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/inmet` | URL de conexão usada pelo notebook de análise (SQLAlchemy) |
 
 > O `.env` **não** vai para o git (veja `.gitignore`). Use `.env.example` como template.
 
@@ -181,9 +161,15 @@ python -m analytics.consultas <nome>          # roda uma consulta específica
 ```
 psycopg[binary]>=3.1
 pandas>=2.0
+seaborn>=0.13
 python-dotenv>=1.0
 requests>=2.31
 ```
+
+Para executar o notebook de análise (`analytics/EDA_INMET.ipynb`), também são utilizadas as bibliotecas abaixo — elas servem apenas para a etapa de análise, e **não** são necessárias para o ETL:
+- `sqlalchemy` — conexão com o TimescaleDB via `DATABASE_URL`
+- `matplotlib` — base de plotagem dos gráficos (em conjunto com o `seaborn`, já listado no `requirements.txt`)
+- `jupyter` — interface para abrir e executar o notebook (`jupyter notebook`)
 
 **Licença**
 ----------
