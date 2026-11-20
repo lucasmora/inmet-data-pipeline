@@ -38,6 +38,14 @@ CREATE TABLE dados_estacoes (
 -- 3) Transforma em hypertable (particiona por data_hora)
 SELECT create_hypertable('dados_estacoes', 'data_hora', if_not_exists => TRUE);
 
+-- Indices para filtros analiticos e JOIN com a dimensao 'estacoes'
+CREATE INDEX IF NOT EXISTS idx_dados_estacoes_cidade_data
+    ON dados_estacoes (cidade, data_hora DESC);
+CREATE INDEX IF NOT EXISTS idx_dados_estacoes_estado_data
+    ON dados_estacoes (estado, data_hora DESC);
+CREATE INDEX IF NOT EXISTS idx_dados_estacoes_regiao_data
+    ON dados_estacoes (regiao, data_hora DESC);
+
 -- 4) Tabela de controle de ingestao (retomada idempotente)
 --    Permite reiniciar o pipeline apenas dos arquivos pendentes.
 CREATE TABLE IF NOT EXISTS ingestao_status (

@@ -60,8 +60,6 @@ def coletar():
 
 def upsert(rows):
     """Insere ou atualiza em lote (UPSERT em 'nome')."""
-    conn = get_conn()
-    cur = conn.cursor()
     sql = """
         INSERT INTO estacoes (nome, cod_estacao, uf, latitude, longitude,
                               altitude, tipo, situacao)
@@ -75,10 +73,9 @@ def upsert(rows):
             tipo        = EXCLUDED.tipo,
             situacao    = EXCLUDED.situacao;
     """
-    cur.executemany(sql, rows)
-    conn.commit()
-    cur.close()
-    conn.close()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.executemany(sql, rows)
+        conn.commit()
 
 
 if __name__ == "__main__":

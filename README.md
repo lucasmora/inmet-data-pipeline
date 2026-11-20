@@ -12,7 +12,7 @@
 
 **Descrição**
 -------------
-Pipeline **ETL** para dados meteorológicos do **INMET** (Instituto Nacional de Meteorologia) com Analytics simples. O pipeline lê arquivo a arquivo, em *chunks*, e alimenta o **TimescaleDB** em lotes via protocolo *COPY* binário.
+Pipeline **ETL** para dados meteorológicos do **INMET** (Instituto Nacional de Meteorologia) com camada analítica de séries temporais. O pipeline lê arquivo a arquivo, em *chunks*, e alimenta o **TimescaleDB** em lotes via protocolo *COPY* binário.
 
 **Objetivo**
 -----------
@@ -32,6 +32,19 @@ Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional
 | **Driver** | `psycopg[binary]` 3.x — *COPY* binário de alta performance |
 | **Container** | Docker + docker compose (PostgreSQL 17 com TimescaleDB pré-compilado) |
 | **Config** | `python-dotenv` (variáveis de ambiente em `.env`) |
+
+**Arquitetura do Pipeline**
+--------------------------
+```mermaid
+flowchart LR
+    A["CSVs INMET (ZIPs por estação)"] --> B["transform.py (Parse em chunks + metadados)"]
+    B --> C["ingest.py (Lotes via COPY binário)"]
+    C --> D[("TimescaleDB (dados_estacoes + ingestao_status)")]
+    E["API Pública INMET (/estacoes/M e /T)"] --> F["fetch_estacoes.py (UPSERT idempotente)"]
+    F --> G[("Dimensão estacoes (Star Schema)")]
+    D --> H["EDA_INMET.ipynb / BI (time_bucket + JOIN)"]
+    G --> H
+```
 
 **Estrutura do Projeto**
 -----------------------
@@ -67,14 +80,15 @@ O projeto usa **TimescaleDB** (extensão de PostgreSQL para séries temporais) r
    - a extensão `timescaledb`;
    - a tabela `dados_estacoes` (coluna `data_hora` como `TIMESTAMPTZ`, demais como `TEXT`/`NUMERIC`);
    - a **hypertable** particionada por `data_hora`;
+   - índices compostos B-tree em `(cidade, data_hora DESC)`, `(estado, data_hora DESC)` e `(regiao, data_hora DESC)`;
    - a tabela de controle `ingestao_status` (retomada idempotente);
    - a tabela-dimensão `estacoes` (metadados das estações: lat/long/uf/tipo).
 
-Como a **hypertable** é particionada por `data_hora`, os lotes enviados via *COPY* binário caem direto no chunk correto — sem varrer a tabela — o que mantém a ingestão e as consultas rápidas mesmo com milhões de registros.
+Como a **hypertable** é particionada por `data_hora`, os lotes enviados via *COPY* binário caem direto no chunk correto — sem varrer a tabela —, enquanto os índices compostos nas colunas mais filtradas evitam *full table scans* em consultas analíticas e *JOINs*, preservando a performance mesmo na escala de milhões de registros.
 
 Conexão a partir do código Python (fora do container):
 ```
-postgresql://postgres:***@localhost:5433/inmet
+postgresql+psycopg://postgres:***@localhost:5433/inmet
 ```
 
 > Nota: o `docker-entrypoint-initdb.d` só executa no primeiro boot de um volume vazio.
@@ -92,7 +106,7 @@ postgresql://postgres:***@localhost:5433/inmet
 **Analytics & Cloud Ready**
 ---------------------------
 A pasta `/analytics` concentra a análise e a integração com nuvem:
-- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e visualiza os resultados com Matplotlib/Seaborn (ex.: temperatura média mensal por região, precipitação acumulada por estado).
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e JOINs com a dimensão `estacoes`, e visualiza os resultados com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
 - `analytics/export_to_bigquery.py`: *Stub* de integração com Google BigQuery, demonstrando conhecimento em arquitetura Cloud (GCP) e preparação de dados para Data Warehouse.
 
 **Arquitetura Cloud Recomendada**
@@ -149,10 +163,10 @@ jupyter notebook analytics/EDA_INMET.ipynb
 | `POSTGRES_DB` | `inmet` | Nome do banco |
 | `POSTGRES_HOST` | `localhost` | Host do TimescaleDB |
 | `POSTGRES_PORT` | `5433` | Porta do TimescaleDB |
-| `PASTA_ENTRADA` | `C:\Users\moral\Downloads\meteorologia` | Pasta com os CSVs do INMET (arquivos `*.CSV`) |
+| `PASTA_ENTRADA` | `./data` | Pasta com os CSVs do INMET (arquivos `*.CSV`) |
 | `BATCH_SIZE` | `50000` | Linhas por lote no COPY binário |
 | `CHUNK_SIZE` | `100000` | Linhas por chunk do `read_csv` |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/inmet` | URL de conexão usada pelo notebook de análise (SQLAlchemy) |
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5433/inmet` | URL de conexão usada pelo notebook de análise (SQLAlchemy + `psycopg`) |
 
 > O `.env` **não** vai para o git (veja `.gitignore`). Use `.env.example` como template.
 
@@ -162,14 +176,15 @@ jupyter notebook analytics/EDA_INMET.ipynb
 psycopg[binary]>=3.1
 pandas>=2.0
 seaborn>=0.13
+matplotlib>=3.8
+sqlalchemy>=2.0
+jupyter>=1.0
 python-dotenv>=1.0
 requests>=2.31
+# google-cloud-bigquery>=3.0  # opcional: apenas para analytics/export_to_bigquery.py
 ```
 
-Para executar o notebook de análise (`analytics/EDA_INMET.ipynb`), também são utilizadas as bibliotecas abaixo — elas servem apenas para a etapa de análise, e **não** são necessárias para o ETL:
-- `sqlalchemy` — conexão com o TimescaleDB via `DATABASE_URL`
-- `matplotlib` — base de plotagem dos gráficos (em conjunto com o `seaborn`, já listado no `requirements.txt`)
-- `jupyter` — interface para abrir e executar o notebook (`jupyter notebook`)
+Todas as dependências necessárias para o ETL e para o notebook de análise (`analytics/EDA_INMET.ipynb`) já estão incluídas no `requirements.txt`. O pacote `google-cloud-bigquery` permanece opcional (comentado) para quem quiser estender o *stub* `analytics/export_to_bigquery.py`.
 
 **Licença**
 ----------

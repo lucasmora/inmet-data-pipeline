@@ -1,7 +1,10 @@
 import os
 import logging
 import pandas as pd
-from google.cloud import bigquery
+try:
+    from google.cloud import bigquery
+except ImportError:
+    bigquery = None
 from dotenv import load_dotenv
 
 # Configuração de logs

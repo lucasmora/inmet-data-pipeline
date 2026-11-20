@@ -12,7 +12,7 @@ PADRAO_ARQUIVO = re.compile(
     r"INMET_(?P<regiao>[A-Z]{1,2})_"
     r"(?P<estado>[A-Z]{2})_"
     r"(?P<estacao>[A-Z]\d{3})_"
-    r"(?P<cidade>[A-Za-zÀ-ÿ0-9().\-\s]+)_"
+    r"(?P<cidade>[A-Za-zÀ-ÿ0-9().'\-\s]+)_"
 )
 
 # Ordem das colunas APOS skiprows=8 e descartar a ultima coluna vazia do INMET.
