@@ -154,6 +154,13 @@ Abra o notebook de análise em `analytics/EDA_INMET.ipynb`:
 jupyter notebook analytics/EDA_INMET.ipynb
 ```
 
+### 4. Testes Automatizados
+Execute a suíte de testes unitários e de contrato (sem necessidade de Docker):
+```bash
+pytest -v
+```
+Mais detalhes sobre o que cada arquivo testa e a estratégia da suíte em [tests/README.md](tests/README.md).
+
 **Variáveis de Ambiente**
 ------------------------
 | Variável | Padrão | Descrição |
@@ -181,6 +188,7 @@ sqlalchemy>=2.0
 jupyter>=1.0
 python-dotenv>=1.0
 requests>=2.31
+pytest>=8.0
 # google-cloud-bigquery>=3.0  # opcional: apenas para analytics/export_to_bigquery.py
 ```
 

@@ -6,4 +6,5 @@ sqlalchemy>=2.0
 jupyter>=1.0
 python-dotenv>=1.0
 requests>=2.31
+pytest>=8.0
 # google-cloud-bigquery>=3.0  # opcional: apenas para analytics/export_to_bigquery.py
