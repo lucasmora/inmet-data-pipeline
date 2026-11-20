@@ -7,9 +7,7 @@ except ImportError:
     bigquery = None
 from dotenv import load_dotenv
 
-# Configuração de logs
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("export_to_bigquery")
 
 # --- STUB / ARQUITETURA ---
 # Este script demonstra como integrar dados do TimescaleDB (Local) 
@@ -32,20 +30,26 @@ def exportar_para_bq(df: pd.DataFrame, table_id: str):
         # Inicializa o cliente (assume GOOGLE_APPLICATION_CREDENTIALS setada)
         # client = bigquery.Client()
         
-        logger.info(f"Simulando exportação para BigQuery: {table_id}")
+        logger.info("Simulando exportação para BigQuery: table_id=%s", table_id)
         
         # job = client.load_table_from_dataframe(df, table_id)
         # job.result()  # Aguarda o job finalizar
         
-        logger.info(f"Dados exportados com sucesso para {table_id}")
+        logger.info("Dados exportados com sucesso: table_id=%s", table_id)
         
-    except Exception as e:
-        logger.error(f"Erro ao exportar para o BigQuery: {e}")
+    except Exception:
+        logger.exception("Erro ao exportar para o BigQuery: table_id=%s", table_id)
         raise
 
 if __name__ == "__main__":
     # Carrega variáveis
     load_dotenv('../.env')
+
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     
     # 1. Simulação: Busca dados do seu banco local (ex: amostra)
     # (Reutiliza a conexão do db.py do seu projeto)
@@ -58,4 +62,4 @@ if __name__ == "__main__":
     # 2. Executa export
     # exportar_para_bq(df_stub, "seu-projeto-gcp.meteo.dados_inmet")
     
-    print("Script de exportação pronto. Descomente as linhas de 'client' para rodar em GCP.")
+    logger.info("Script de exportação em modo stub; descomente o bloco de 'client' para rodar em GCP.")

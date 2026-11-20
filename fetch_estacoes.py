@@ -9,9 +9,14 @@ NAO toca em dados_estacoes (tabela de fatos) -- so cria/atualiza a dimensao.
 
 Chave de join com dados_estacoes: estacoes.nome (DC_NOME) = dados_estacoes.cidade
 """
+import logging
+import os
+import time
 import requests
 
 from db import get_conn
+
+logger = logging.getLogger("fetch_estacoes")
 
 ENDPOINTS = [
     "https://apitempo.inmet.gov.br/estacoes/M",
@@ -38,9 +43,12 @@ def coletar():
     rows = []
     visto = set()
     for url in ENDPOINTS:
+        logger.info("Consultando API INMET: url=%s", url)
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
-        for st in resp.json():
+        estacoes_api = resp.json()
+        antes = len(rows)
+        for st in estacoes_api:
             cod = st.get("CD_ESTACAO")
             if not cod or cod in visto:
                 continue
@@ -55,6 +63,12 @@ def coletar():
                 st.get("TP_ESTACAO"),    # tipo
                 st.get("CD_SITUACAO"),   # situacao
             ))
+        logger.debug(
+            "Endpoint processado: url=%s recebidas=%d novas=%d",
+            url,
+            len(estacoes_api),
+            len(rows) - antes,
+        )
     return rows
 
 
@@ -78,7 +92,30 @@ def upsert(rows):
         conn.commit()
 
 
+def main():
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    inicio = time.perf_counter()
+    try:
+        dados = coletar()
+        if not dados:
+            logger.warning("Nenhuma estacao retornada pelos endpoints do INMET")
+            return
+        upsert(dados)
+        duracao = time.perf_counter() - inicio
+        logger.info(
+            "Dimensao 'estacoes' atualizada: total=%d duracao_s=%.2f",
+            len(dados),
+            duracao,
+        )
+    except Exception:
+        logger.exception("Falha ao coletar/atualizar estacoes do INMET")
+        raise
+
+
 if __name__ == "__main__":
-    dados = coletar()
-    upsert(dados)
-    print(f"[ok] {len(dados)} estacoes inseridas/atualizadas na tabela 'estacoes'")
+    main()
