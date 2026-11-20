@@ -30,7 +30,7 @@ Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional
 | **ETL/Transform** | Pandas (`read_csv` em *chunks*) + `re` (parsing de metadados) |
 | **Banco** | TimescaleDB (extensão de PostgreSQL 17 para séries temporais) |
 | **Driver** | `psycopg[binary]` 3.x — *COPY* binário de alta performance |
-| **Container** | Docker + docker compose (PostgreSQL 17 com TimescaleDB pré-compilado) |
+| **Container** | Docker + docker compose (apenas o banco: PostgreSQL 17 com TimescaleDB pré-compilado) |
 | **Config** | `python-dotenv` (variáveis de ambiente em `.env`) |
 
 **Arquitetura do Pipeline**
@@ -129,14 +129,20 @@ Para habilitar mapas (latitude/longitude) e filtros por UF/tipo no Power BI/Meta
 
 **Como Rodar**
 -------------
+> **Onde cada parte roda:** Apenas o **banco de dados (TimescaleDB)** roda no Docker (`docker-compose.yml`, expondo a porta `5433`). Todo o restante do projeto — scripts ETL (`ingest.py`, `fetch_estacoes.py`), testes (`pytest`) e o notebook de análise (`analytics/EDA_INMET.ipynb`) — roda **localmente fora do container**, utilizando um ambiente virtual Python (`venv`) e conectando-se ao banco em `localhost:5433`.
+
 ### 1. Subir o banco (Docker)
 ```bash
 cp .env.example .env
 docker compose up -d
 ```
 
-### 2. Instalar dependências e ingerir
+### 2. Criar ambiente virtual (`venv`), instalar dependências e ingerir
 ```bash
+python -m venv .venv
+# Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+# Linux/macOS:          source .venv/bin/activate
+
 pip install -r requirements.txt
 python ingest.py      # lê os CSVs de PASTA_ENTRADA, pula os já ingeridos e insere em lotes via COPY binário
 ```
