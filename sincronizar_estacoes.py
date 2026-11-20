@@ -16,7 +16,7 @@ import requests
 
 from db import get_conn
 
-logger = logging.getLogger("fetch_estacoes")
+logger = logging.getLogger("sincronizar_estacoes")
 
 ENDPOINTS = [
     "https://apitempo.inmet.gov.br/estacoes/M",

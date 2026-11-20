@@ -1,4 +1,5 @@
 """Testes unitários para o orquestrador de ingestão (ingest.py)."""
+import logging
 from unittest.mock import MagicMock
 
 import ingest
@@ -157,15 +158,16 @@ def test_ingerir_arquivo_pula_linhas_malformadas(
     assert len(lotes_enviados[0]) == 2
 
 
-def test_main_pasta_vazia_nao_abre_conexao(tmp_path, monkeypatch, capsys):
+def test_main_pasta_vazia_nao_abre_conexao(tmp_path, monkeypatch, caplog):
     get_conn_mock = MagicMock()
     monkeypatch.setattr(ingest, "PASTA_ENTRADA", str(tmp_path))
     monkeypatch.setattr(ingest, "get_conn", get_conn_mock)
 
-    ingest.main()
+    with caplog.at_level(logging.WARNING, logger="ingest"):
+        ingest.main()
 
     get_conn_mock.assert_not_called()
-    assert "Nenhum CSV encontrado" in capsys.readouterr().out
+    assert "Nenhum CSV encontrado" in caplog.text
 
 
 def test_main_aceita_extensao_csv_em_minusculo_e_maiusculo(

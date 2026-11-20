@@ -1,6 +1,6 @@
 # Dataset de Amostra (INMET)
 
-Esta pasta contém um **dataset sintético de amostra** no formato oficial dos CSVs do **INMET** (`latin_1`, separador `;`, 8 linhas de cabeçalho de metadados), pensado para quem clonar o repositório conseguir executar o pipeline completo (`ingest.py` + `fetch_estacoes.py` + `analytics/EDA_INMET.ipynb`) imediatamente, sem precisar baixar dezenas de megabytes antes do primeiro teste.
+Esta pasta contém um **dataset sintético de amostra** no formato oficial dos CSVs do **INMET** (`latin_1`, separador `;`, 8 linhas de cabeçalho de metadados), pensado para quem clonar o repositório conseguir executar o pipeline completo (`ingest.py` + `sincronizar_estacoes.py` + `analytics/EDA_INMET.ipynb`) imediatamente, sem precisar baixar dezenas de megabytes antes do primeiro teste.
 
 ## O que está incluído
 
@@ -18,7 +18,7 @@ São **5 arquivos** (128 linhas cada, **640 registros no total**), cobrindo **ja
 
 1. Suba o TimescaleDB (`docker compose up -d`).
 2. Execute `python ingest.py` para ingerir os 5 CSVs desta pasta na hypertable `dados_estacoes`.
-3. Execute `python fetch_estacoes.py` para popular a dimensão `estacoes` (necessária para o gráfico por faixa de altitude).
+3. Execute `python sincronizar_estacoes.py` para popular a dimensão `estacoes` (necessária para o gráfico por faixa de altitude).
 4. Abra e execute `analytics/EDA_INMET.ipynb`.
 
 > **Quer usar dados completos do INMET?** Basta substituir ou adicionar novos `*.CSV` oficiais nesta pasta. Se quiser limpar os dados de amostra do banco antes de ingerir o histórico completo, recrie o volume com `docker compose down -v && docker compose up -d`.

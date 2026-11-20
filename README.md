@@ -40,7 +40,7 @@ flowchart LR
     A["CSVs INMET (ZIPs por estação)"] --> B["transform.py (Parse em chunks + metadados)"]
     B --> C["ingest.py (Lotes via COPY binário)"]
     C --> D[("TimescaleDB (dados_estacoes + ingestao_status)")]
-    E["API Pública INMET (/estacoes/M e /T)"] --> F["fetch_estacoes.py (UPSERT idempotente)"]
+    E["API Pública INMET (/estacoes/M e /T)"] --> F["sincronizar_estacoes.py (UPSERT idempotente)"]
     F --> G[("Dimensão estacoes (Star Schema)")]
     D --> H["EDA_INMET.ipynb / BI (time_bucket + JOIN)"]
     G --> H
@@ -101,7 +101,7 @@ postgresql+psycopg://postgres:***@localhost:5433/inmet
 |--------|-----------|
 | `dados_estacoes` | Hypertable particionada por `data_hora` (TIMESTAMPTZ). Colunas de dimensão: `regiao`, `estado`, `estacao`, `cidade` (TEXT). Medidas meteorológicas (NUMERIC): `precipitacao`, `pressao`, `pressao_max_ant`, `pressao_min_ant`, `radiacao`, `temp_ar`, `temp_orvalho`, `temp_max_ant`, `temp_min_ant`, `temp_orvalho_max_ant`, `temp_orvalho_min_ant`, `umidade_max_ant`, `umidade_min_ant`, `umidade_ar`, `vento_dir`, `vento_rajada`, `vento_vel`. |
 | `ingestao_status` | Controle de ingestão: `arquivo` (TEXT PK), `total_linhas` (BIGINT), `processado_em` (TIMESTAMPTZ), `status` (TEXT). Permite reiniciar o pipeline só dos arquivos pendentes. |
-| `estacoes` | **Dimensão** de estações (star schema): `nome` (TEXT PK = `DC_NOME` do INMET, chave de join com `dados_estacoes.cidade`), `cod_estacao` (código oficial INMET), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `fetch_estacoes.py`. |
+| `estacoes` | **Dimensão** de estações (star schema): `nome` (TEXT PK = `DC_NOME` do INMET, chave de join com `dados_estacoes.cidade`), `cod_estacao` (código oficial INMET), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `sincronizar_estacoes.py`. |
 
 **Analytics & Cloud Ready**
 ---------------------------
@@ -123,13 +123,13 @@ Para habilitar mapas (latitude/longitude) e filtros por UF/tipo no Power BI/Meta
 - Metadados vindos do **endpoint oficial do INMET** (sem autenticação):
   - `https://apitempo.inmet.gov.br/estacoes/M` (manuais/convencionais)
   - `https://apitempo.inmet.gov.br/estacoes/T` (automáticas)
-- `fetch_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.nome` (idempotente — roda quantas vezes quiser).
+- `sincronizar_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.nome` (idempotente — roda quantas vezes quiser).
 - **Cobertura:** das ~563 cidades em `dados_estacoes`, ~546 casam com `estacoes.nome` (~96,6%). As ~17 restantes divergem por acento/maiúsculas/sufixos no nome (ex.: `BELO HORIZONTE (PAMPULHA)`, `Paty do Alferes - Avelar`) e podem ser ajustadas com um join tolerante no futuro.
 - A tabela **não** é hypertable: é dimensão pequena (~700 linhas), não série temporal.
 
 **Como Rodar**
 -------------
-> **Onde cada parte roda:** Apenas o **banco de dados (TimescaleDB)** roda no Docker (`docker-compose.yml`, expondo a porta `5433`). Todo o restante do projeto — scripts ETL (`ingest.py`, `fetch_estacoes.py`), testes (`pytest`) e o notebook de análise (`analytics/EDA_INMET.ipynb`) — roda **localmente fora do container**, utilizando um ambiente virtual Python (`venv`) e conectando-se ao banco em `localhost:5433`.
+> **Onde cada parte roda:** Apenas o **banco de dados (TimescaleDB)** roda no Docker (`docker-compose.yml`, expondo a porta `5433`). Todo o restante do projeto — scripts ETL (`ingest.py`, `sincronizar_estacoes.py`), testes (`pytest`) e o notebook de análise (`analytics/EDA_INMET.ipynb`) — roda **localmente fora do container**, utilizando um ambiente virtual Python (`venv`) e conectando-se ao banco em `localhost:5433`.
 
 ### 1. Subir o banco (Docker)
 ```bash
@@ -150,7 +150,7 @@ O `ingest.py` é **idempotente e retomável**: lê cada CSV em *chunks* e descar
 
 ### 2b. (Opcional) Popular a dimensão de estações
 ```bash
-python fetch_estacoes.py   # puxa metadados do INMET -> tabela 'estacoes' (lat/long/uf/tipo)
+python sincronizar_estacoes.py   # puxa metadados do INMET -> tabela 'estacoes' (lat/long/uf/tipo)
 ```
 Útil para mapas e filtros no Power BI/Metabase. Idempotente (UPSERT).
 
@@ -215,4 +215,4 @@ MIT. Sinta-se livre para usar, modificar e distribuir, contanto que essa licenç
 **Versões/Alterações**
 ---------------------
 - **1.0.0** – Versão inicial: pipeline ETL incremental (ingestão idempotente via COPY binário), TimescaleDB em Docker (hypertable + ingestao_status), transform na borda e 4 consultas analíticas de série temporal.
-- **1.1.0** – Tabela-dimensão `estacoes` (star schema) alimentada por `fetch_estacoes.py` a partir do endpoint oficial do INMET; habilita mapas (lat/long) e filtros por UF/tipo no Power BI/Metabase.
+- **1.1.0** – Tabela-dimensão `estacoes` (star schema) alimentada por `sincronizar_estacoes.py` a partir do endpoint oficial do INMET; habilita mapas (lat/long) e filtros por UF/tipo no Power BI/Metabase.

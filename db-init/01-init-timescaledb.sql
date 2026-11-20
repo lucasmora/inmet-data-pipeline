@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS ingestao_status (
     status         TEXT
 );
 
--- 5) Tabela-dimensao de estacoes (star schema) alimentada por fetch_estacoes.py.
+-- 5) Tabela-dimensao de estacoes (star schema) alimentada por sincronizar_estacoes.py.
 --    'nome' = DC_NOME do INMET = chave de join com dados_estacoes.cidade.
 --    'cod_estacao' = CD_ESTACAO oficial (so referencia).
 --    Nao eh hypertable: é dimensao pequena (~600 linhas), nao serie temporal.
