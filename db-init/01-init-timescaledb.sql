@@ -3,9 +3,7 @@
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
-DROP TABLE IF EXISTS dados_estacoes;
-
-CREATE TABLE dados_estacoes (
+CREATE TABLE IF NOT EXISTS dados_estacoes (
     data_hora           TIMESTAMPTZ NOT NULL,
     regiao              TEXT,
     estado              TEXT,

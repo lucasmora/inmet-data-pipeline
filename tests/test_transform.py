@@ -1,11 +1,13 @@
 """Testes unitários para extração de metadados e transformação de chunks (transform.py)."""
 from datetime import timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import db
 from tests.conftest import default_inmet_row
 from transform import NUMERICAS, extrair_metadados, parse_chunk
 
@@ -178,3 +180,19 @@ def test_parse_chunk_falha_em_valor_nao_numerico(build_raw_df, meta_brasilia):
 
     with pytest.raises(InvalidOperation):
         parse_chunk(raw, meta_brasilia)
+
+
+def test_dataset_amostra_em_data_e_valido():
+    pasta_data = Path(__file__).resolve().parent.parent / "data"
+    arquivos = sorted(pasta_data.glob("*.CSV"))
+    assert len(arquivos) == 5
+
+    for caminho in arquivos:
+        meta = extrair_metadados(caminho.name)
+        assert meta is not None, f"Falha ao extrair metadados de {caminho.name}"
+
+        df_bruto = pd.read_csv(caminho, sep=";", encoding="latin_1", skiprows=8)
+        df_tratado = parse_chunk(df_bruto, meta)
+
+        assert len(df_tratado) == 128
+        assert df_tratado.columns.tolist() == db.COLUMNS

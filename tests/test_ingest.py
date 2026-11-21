@@ -2,6 +2,8 @@
 import logging
 from unittest.mock import MagicMock
 
+import pytest
+
 import ingest
 from tests.conftest import default_inmet_row
 
@@ -237,8 +239,10 @@ def test_main_faz_rollback_isolado_em_erro_sem_afetar_outros_arquivos(
     monkeypatch.setattr(ingest, "get_conn", lambda: conn)
     monkeypatch.setattr(ingest, "copy_rows", copy_com_falha_no_segundo)
 
-    ingest.main()
+    with pytest.raises(SystemExit) as exc_info:
+        ingest.main()
 
+    assert exc_info.value.code == 1
     assert conn.commit.call_count == 2
     assert conn.rollback.call_count == 1
     assert conn.marcados_commitados == [(arq1, 1), (arq3, 1)]

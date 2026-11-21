@@ -12,7 +12,7 @@ DDL_PATH = Path(__file__).resolve().parent.parent / "db-init" / "01-init-timesca
 def _extrair_colunas_ddl_dados_estacoes():
     sql = DDL_PATH.read_text(encoding="utf-8")
     match = re.search(
-        r"CREATE TABLE\s+dados_estacoes\s*\((.*?)\);",
+        r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?dados_estacoes\s*\((.*?)\);",
         sql,
         flags=re.DOTALL | re.IGNORECASE,
     )

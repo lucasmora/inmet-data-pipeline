@@ -12,6 +12,7 @@ Nunca carrega o dataset inteiro (4,9M linhas) na memoria (Volume).
 """
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 import pandas as pd
@@ -151,6 +152,8 @@ def main():
         total_geral,
         duracao_total,
     )
+    if arquivos_erro > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

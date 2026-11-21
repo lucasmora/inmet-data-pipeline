@@ -5,6 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)
 ![TimescaleDB](https://img.shields.io/badge/TimescaleDB-PostgreSQL--17-336791?style=flat-square&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=flat-square&logo=docker&logoColor=white)
+[![CI](https://github.com/lucasmora/inmet-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasmora/inmet-data-pipeline/actions/workflows/ci.yml)
 ![Licença](https://img.shields.io/badge/Licen%C3%A7a-MIT-22c55e?style=flat-square)
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-1.1.0-blue?style=flat-square)
 
@@ -20,7 +21,7 @@ Ingerir de forma incremental, retomável e idempotente milhões de linhas de sé
 
 **Origem dos Dados**
 -------------------
-Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional de Meteorologia). O portal fornece um arquivo **compactado em ZIP** por estação, contendo **um CSV por dia** para todo o ano. Os arquivos seguem o padrão `INMET_<REGIÃO>_<UF>_<CÓDIGO>_<CIDADE>_<datas>.CSV`, com ~8 linhas de cabeçalho antes dos dados (descartadas via `skiprows=8`), separador `;`, encoding `latin-1` e a última coluna vazia. O parsing é feito **na borda, arquivo a arquivo**: o `transform.py` extrai os metadados (região, UF, código, cidade) do próprio nome do arquivo e normaliza as colunas do formato INMET para o formato canônico da tabela.
+Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional de Meteorologia). O portal fornece arquivos **compactados em ZIP** por ano, contendo **um CSV por estação** para todo o período (com medições horárias). Os arquivos seguem o padrão `INMET_<REGIÃO>_<UF>_<CÓDIGO>_<CIDADE>_<datas>.CSV`, com ~8 linhas de cabeçalho antes dos dados (descartadas via `skiprows=8`), separador `;`, encoding `latin-1` e a última coluna vazia. O parsing é feito **na borda, arquivo a arquivo**: o `transform.py` extrai os metadados (região, UF, código, cidade) do próprio nome do arquivo e normaliza as colunas do formato INMET para o formato canônico da tabela.
 
 **Stack Tecnológico**
 --------------------
@@ -50,18 +51,36 @@ flowchart LR
 -----------------------
 ```
 inmet-data-pipeline/
-├── ingest.py                # Orquestrador ETL: lista CSVs, pula já ingeridos, insere em lotes via COPY binário
-├── transform.py             # Extrai metadados do nome do arquivo + normaliza colunas + data_hora TIMESTAMPTZ
-├── db.py                    # Conexão (.env) + helper de COPY FROM STDIN binário (psycopg3)
-├── requirements.txt         # Dependências Python
-├── docker-compose.yml       # TimescaleDB (PostgreSQL 17) em container, porta 5433
-├── .env.example             # Template de variáveis de ambiente
-├── LICENSE                  # Licença MIT
-├── db-init/
-│   └── 01-init-timescaledb.sql  # Extensão + hypertable dados_estacoes + ingestao_status + estacoes (dimensão)
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # Pipeline CI (ruff check + pytest) no GitHub Actions
 ├── analytics/
-│   ├── EDA_INMET.ipynb          # Análise Exploratória (time_bucket + Matplotlib/Seaborn)
-│   └── export_to_bigquery.py    # Stub de integração com Google BigQuery
+│   ├── EDA_INMET.ipynb            # Análise Exploratória (time_bucket + Matplotlib/Seaborn)
+│   └── export_to_bigquery.py      # Stub arquitetural de integração com Google BigQuery
+├── data/
+│   ├── README.md                  # Documentação do dataset sintético de amostra
+│   └── INMET_*.CSV                # 5 CSVs de amostra (1 por região/faixa de altitude, 640 linhas)
+├── db-init/
+│   └── 01-init-timescaledb.sql    # Extensão + hypertable dados_estacoes + ingestao_status + estacoes
+├── tests/
+│   ├── README.md                  # Escopo e estratégia da suíte de testes
+│   ├── conftest.py                # Fixtures compartilhadas (CSVs e DataFrames sintéticos)
+│   ├── test_db.py                 # Testes unitários de conexão e COPY binário
+│   ├── test_export_bigquery.py    # Smoke test do stub de exportação ao BigQuery
+│   ├── test_ingest.py             # Testes unitários do orquestrador (chunks, batches, rollback)
+│   ├── test_schema_contract.py    # Contrato de schema entre transform.py, db.py e DDL SQL
+│   ├── test_sincronizar_estacoes.py # Testes unitários de coleta e UPSERT da dimensão estacoes
+│   └── test_transform.py          # Testes de parsing, Decimal, UTC e CSVs de amostra
+├── db.py                          # Conexão (.env) + helper de COPY FROM STDIN binário (psycopg3)
+├── ingest.py                      # Orquestrador ETL: lista CSVs, pula já ingeridos, COPY atômico por arquivo
+├── sincronizar_estacoes.py        # Coleta metadados na API pública do INMET e faz UPSERT em estacoes
+├── transform.py                   # Extrai metadados do nome do arquivo + normaliza colunas + TIMESTAMPTZ
+├── docker-compose.yml             # TimescaleDB (PostgreSQL 17) em container, porta 5433
+├── pyproject.toml                 # Metadados do projeto, dependências opcionais e config do Ruff
+├── pytest.ini                     # Configuração do pytest (pythonpath e testpaths)
+├── requirements.txt               # Dependências Python para execução local e CI
+├── .env.example                   # Template de variáveis de ambiente
+└── LICENSE                        # Licença MIT
 ```
 
 **Banco de Dados (TimescaleDB via Docker)**
@@ -103,18 +122,22 @@ postgresql+psycopg://postgres:***@localhost:5433/inmet
 | `ingestao_status` | Controle de ingestão: `arquivo` (TEXT PK), `total_linhas` (BIGINT), `processado_em` (TIMESTAMPTZ), `status` (TEXT). Permite reiniciar o pipeline só dos arquivos pendentes. |
 | `estacoes` | **Dimensão** de estações (star schema): `nome` (TEXT PK = `DC_NOME` do INMET, chave de join com `dados_estacoes.cidade`), `cod_estacao` (código oficial INMET), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `sincronizar_estacoes.py`. |
 
-**Analytics & Cloud Ready**
----------------------------
-A pasta `/analytics` concentra a análise e a integração com nuvem:
-- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e JOINs com a dimensão `estacoes`, e visualiza os resultados com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
-- `analytics/export_to_bigquery.py`: *Stub* de integração com Google BigQuery, demonstrando conhecimento em arquitetura Cloud (GCP) e preparação de dados para Data Warehouse.
+**Analytics**
+-------------
+A pasta `/analytics` concentra a camada analítica do projeto:
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
+- `analytics/export_to_bigquery.py`: *Stub* de arquitetura para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
 
-**Arquitetura Cloud Recomendada**
----------------------------------
-Embora executado localmente via Docker, este pipeline é *Cloud-Native*:
-- **Ingestão:** Substituição de execução local por *Cloud Functions* ou *Cloud Run* disparado por eventos.
-- **Armazenamento:** Migração do TimescaleDB (local) para o *BigQuery* (Data Warehouse Serverless), ideal para escala petabyte.
-- **Orquestração:** Uso de ferramentas como *Cloud Composer (Airflow)* ou *Cloud Scheduler* para automação de tarefas ETL.
+**Próximos Passos (Roadmap)**
+-----------------------------
+O projeto foi desenhado para rodar **100% localmente via Docker** sem exigir infraestrutura ou custos em nuvem. Como evoluções planejadas para um ambiente produtivo ou futuras versões, ficam mapeados os seguintes pontos:
+
+- **Integração Cloud / Google BigQuery (`analytics/export_to_bigquery.py`):** o script atual funciona como um *stub* arquitetural documentando o contrato de exportação via `google-cloud-bigquery` (sem carga ativa em nuvem nesta versão para manter o projeto gratuito e auto-contido). Em um cenário cloud, a evolução natural inclui:
+  - **Ingestão:** execução via *Cloud Functions* ou *Cloud Run* disparada por eventos (ex.: chegada de novos arquivos no Cloud Storage).
+  - **Armazenamento:** exportação/carga do TimescaleDB ou GCS para o *BigQuery* como Data Warehouse analítico.
+  - **Orquestração:** agendamento e retry com *Cloud Composer (Airflow)* ou *Cloud Scheduler*.
+- **Join tolerante de estações:** normalização de acentos, caixa e sufixos entre `dados_estacoes.cidade` e `estacoes.nome` para cobrir as ~17 estações divergentes.
+- **Testes de integração em container:** execução ponta a ponta contra um TimescaleDB real no CI validando `create_hypertable`, precisão `NUMERIC(x,y)` e consultas `time_bucket`.
 
 **Dimensão de Estações (`estacoes`)**
 -------------------------------------
@@ -160,9 +183,10 @@ Abra o notebook de análise em `analytics/EDA_INMET.ipynb`:
 jupyter notebook analytics/EDA_INMET.ipynb
 ```
 
-### 4. Testes Automatizados
-Execute a suíte de testes unitários e de contrato (sem necessidade de Docker):
+### 4. Testes Automatizados e Lint
+Execute o linter e a suíte de testes unitários e de contrato (sem necessidade de Docker):
 ```bash
+ruff check .
 pytest -v
 ```
 Mais detalhes sobre o que cada arquivo testa e a estratégia da suíte em [tests/README.md](tests/README.md).
@@ -179,12 +203,17 @@ Mais detalhes sobre o que cada arquivo testa e a estratégia da suíte em [tests
 | `PASTA_ENTRADA` | `./data` | Pasta com os CSVs do INMET (arquivos `*.CSV`) |
 | `BATCH_SIZE` | `50000` | Linhas por lote no COPY binário |
 | `CHUNK_SIZE` | `100000` | Linhas por chunk do `read_csv` |
+| `LOG_LEVEL` | `INFO` | Nível dos logs estruturados (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5433/inmet` | URL de conexão usada pelo notebook de análise (SQLAlchemy + `psycopg`) |
 
 > O `.env` **não** vai para o git (veja `.gitignore`). Use `.env.example` como template.
 
-**Dependências Principais** (`requirements.txt`)
-------------------------------------------------
+**Dependências (`requirements.txt` e `pyproject.toml`)**
+--------------------------------------------------------
+O projeto mantém dois arquivos de dependências com papéis complementares:
+- `requirements.txt`: lista direta para instalação em um único comando (`pip install -r requirements.txt`) usada localmente e no CI, reunindo dependências de runtime do ETL, notebook (`jupyter`) e qualidade/testes (`pytest`, `ruff`).
+- `pyproject.toml`: metadados do projeto (`PEP 621`), requisito de versão do Python (`>=3.11`), configuração do Ruff (`[tool.ruff]`) e separação de extras em `[project.optional-dependencies]` (`dev` e `bigquery`).
+
 ```
 psycopg[binary]>=3.1
 pandas>=2.0
@@ -195,10 +224,11 @@ jupyter>=1.0
 python-dotenv>=1.0
 requests>=2.31
 pytest>=8.0
+ruff>=0.8
 # google-cloud-bigquery>=3.0  # opcional: apenas para analytics/export_to_bigquery.py
 ```
 
-Todas as dependências necessárias para o ETL e para o notebook de análise (`analytics/EDA_INMET.ipynb`) já estão incluídas no `requirements.txt`. O pacote `google-cloud-bigquery` permanece opcional (comentado) para quem quiser estender o *stub* `analytics/export_to_bigquery.py`.
+O pacote `google-cloud-bigquery` permanece opcional (comentado no `requirements.txt` e isolado no extra `bigquery` do `pyproject.toml`) para quem quiser estender o *stub* `analytics/export_to_bigquery.py`.
 
 **Licença**
 ----------

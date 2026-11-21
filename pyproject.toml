@@ -19,7 +19,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.8",
 ]
 bigquery = [
     "google-cloud-bigquery>=3.0",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
