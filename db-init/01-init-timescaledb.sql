@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS dados_estacoes (
 SELECT create_hypertable('dados_estacoes', 'data_hora', if_not_exists => TRUE);
 
 -- Indices para filtros analiticos e JOIN com a dimensao 'estacoes'
+CREATE INDEX IF NOT EXISTS idx_dados_estacoes_estacao_data
+    ON dados_estacoes (estacao, data_hora DESC);
 CREATE INDEX IF NOT EXISTS idx_dados_estacoes_cidade_data
     ON dados_estacoes (cidade, data_hora DESC);
 CREATE INDEX IF NOT EXISTS idx_dados_estacoes_estado_data
@@ -54,12 +56,12 @@ CREATE TABLE IF NOT EXISTS ingestao_status (
 );
 
 -- 5) Tabela-dimensao de estacoes (star schema) alimentada por sincronizar_estacoes.py.
---    'nome' = DC_NOME do INMET = chave de join com dados_estacoes.cidade.
---    'cod_estacao' = CD_ESTACAO oficial (so referencia).
+--    'cod_estacao' = CD_ESTACAO oficial do INMET = PK e chave de join com dados_estacoes.estacao.
+--    Permite multiplas estacoes (Automatica e Convencional) na mesma cidade sem colisao.
 --    Nao eh hypertable: é dimensao pequena (~600 linhas), nao serie temporal.
 CREATE TABLE IF NOT EXISTS estacoes (
-    nome        TEXT PRIMARY KEY,    -- DC_NOME; join com dados_estacoes.cidade
-    cod_estacao TEXT,                -- codigo oficial INMET (CD_ESTACAO)
+    cod_estacao TEXT PRIMARY KEY,    -- codigo oficial INMET (CD_ESTACAO); join com dados_estacoes.estacao
+    nome        TEXT,                -- DC_NOME (nome da cidade/estacao no INMET)
     uf          TEXT,                -- SG_ESTADO
     latitude    DOUBLE PRECISION,    -- VL_LATITUDE
     longitude   DOUBLE PRECISION,    -- VL_LONGITUDE

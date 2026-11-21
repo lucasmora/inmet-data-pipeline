@@ -15,8 +15,11 @@ import os
 import sys
 import time
 from pathlib import Path
-import pandas as pd
+from typing import Any
+
 from dotenv import load_dotenv
+import pandas as pd
+import psycopg
 
 from db import get_conn, copy_rows
 from transform import extrair_metadados, parse_chunk
@@ -25,17 +28,17 @@ load_dotenv()
 
 logger = logging.getLogger("ingest")
 
-PASTA_ENTRADA = os.getenv("PASTA_ENTRADA", "./data")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50000"))
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "100000"))
+PASTA_ENTRADA: str = os.getenv("PASTA_ENTRADA", "./data")
+BATCH_SIZE: int = int(os.getenv("BATCH_SIZE", "50000"))
+CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "100000"))
 
 
-def ja_ingerido(cur, arquivo):
+def ja_ingerido(cur: psycopg.Cursor[Any], arquivo: str) -> bool:
     cur.execute("SELECT 1 FROM ingestao_status WHERE arquivo = %s", (arquivo,))
     return cur.fetchone() is not None
 
 
-def marcar(cur, arquivo, total):
+def marcar(cur: psycopg.Cursor[Any], arquivo: str, total: int) -> None:
     cur.execute(
         "INSERT INTO ingestao_status (arquivo, total_linhas, status) "
         "VALUES (%s, %s, 'ok') "
@@ -46,9 +49,9 @@ def marcar(cur, arquivo, total):
     )
 
 
-def ingerir_arquivo(cur, caminho, meta):
+def ingerir_arquivo(cur: psycopg.Cursor[Any], caminho: str, meta: dict[str, str]) -> int:
     """Le um CSV em chunks e envia lotes via COPY binario sem commitar no meio."""
-    buffer = []
+    buffer: list[tuple[Any, ...]] = []
     linhas_arquivo = 0
 
     for chunk in pd.read_csv(
@@ -75,7 +78,7 @@ def ingerir_arquivo(cur, caminho, meta):
     return linhas_arquivo
 
 
-def main():
+def main() -> None:
     logging.basicConfig(
         level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",

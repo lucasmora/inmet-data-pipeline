@@ -4,12 +4,15 @@ O COPY binario do psycopg3 e o mecanismo de alta performance recomendado
 pela Timescale para ingerir grandes volumes (Big Data / Velocity).
 """
 import os
+from collections.abc import Sequence
+from typing import Any
+
 from dotenv import load_dotenv
 import psycopg
 
 load_dotenv()
 
-DB_CONFIG = {
+DB_CONFIG: dict[str, Any] = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
     "port": int(os.getenv("POSTGRES_PORT", "5433")),
     "user": os.getenv("POSTGRES_USER", "postgres"),
@@ -18,7 +21,7 @@ DB_CONFIG = {
 }
 
 # Ordem EXATA das colunas da tabela dados_estacoes (22 colunas)
-COLUMNS = [
+COLUMNS: list[str] = [
     "data_hora", "regiao", "estado", "estacao", "cidade",
     "precipitacao", "pressao", "pressao_max_ant", "pressao_min_ant",
     "radiacao", "temp_ar", "temp_orvalho", "temp_max_ant", "temp_min_ant",
@@ -27,15 +30,15 @@ COLUMNS = [
 ]
 
 # Tipos do COPY binario, na mesma ordem de COLUMNS
-COPY_TYPES = ["timestamptz", "text", "text", "text", "text"] + ["numeric"] * 17
+COPY_TYPES: list[str] = ["timestamptz", "text", "text", "text", "text"] + ["numeric"] * 17
 
 
-def get_conn():
+def get_conn() -> psycopg.Connection[Any]:
     """Abre uma conexao com o banco."""
     return psycopg.connect(**DB_CONFIG)
 
 
-def copy_rows(cur, rows):
+def copy_rows(cur: psycopg.Cursor[Any], rows: Sequence[Sequence[Any]]) -> None:
     """Insere um lote de tuplas via COPY FROM STDIN (formato binario).
 
     `rows` deve ser uma lista de tuplas na ordem de COLUMNS.

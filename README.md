@@ -91,17 +91,17 @@ O projeto usa **TimescaleDB** (extensão de PostgreSQL para séries temporais) r
    ```bash
    cp .env.example .env
    ```
-2. Suba o container:
+2. Suba o container (aguardando o `healthcheck` concluir a inicialização):
    ```bash
-   docker compose up -d
+   docker compose up -d --wait
    ```
 3. O script em `db-init/01-init-timescaledb.sql` roda automaticamente no primeiro boot e cria:
    - a extensão `timescaledb`;
    - a tabela `dados_estacoes` (coluna `data_hora` como `TIMESTAMPTZ`, demais como `TEXT`/`NUMERIC`);
    - a **hypertable** particionada por `data_hora`;
-   - índices compostos B-tree em `(cidade, data_hora DESC)`, `(estado, data_hora DESC)` e `(regiao, data_hora DESC)`;
+   - índices compostos B-tree em `(estacao, data_hora DESC)`, `(cidade, data_hora DESC)`, `(estado, data_hora DESC)` e `(regiao, data_hora DESC)`;
    - a tabela de controle `ingestao_status` (retomada idempotente);
-   - a tabela-dimensão `estacoes` (metadados das estações: lat/long/uf/tipo).
+   - a tabela-dimensão `estacoes` (metadados das estações: código/nome/lat/long/uf/tipo).
 
 Como a **hypertable** é particionada por `data_hora`, os lotes enviados via *COPY* binário caem direto no chunk correto — sem varrer a tabela —, enquanto os índices compostos nas colunas mais filtradas evitam *full table scans* em consultas analíticas e *JOINs*, preservando a performance mesmo na escala de milhões de registros.
 
@@ -111,7 +111,7 @@ postgresql+psycopg://postgres:***@localhost:5433/inmet
 ```
 
 > Nota: o `docker-entrypoint-initdb.d` só executa no primeiro boot de um volume vazio.
-> Para recriar o banco do zero: `docker compose down -v && docker compose up -d`.
+> Para recriar o banco do zero: `docker compose down -v` seguido de `docker compose up -d --wait`.
 > Para evoluir o schema sem perder dados, use `ALTER TABLE` (ou ferramenta de migrations como Alembic) — não edite o init esperando reaplicação.
 
 **Modelo de Dados (TimescaleDB)**
@@ -120,17 +120,17 @@ postgresql+psycopg://postgres:***@localhost:5433/inmet
 |--------|-----------|
 | `dados_estacoes` | Hypertable particionada por `data_hora` (TIMESTAMPTZ). Colunas de dimensão: `regiao`, `estado`, `estacao`, `cidade` (TEXT). Medidas meteorológicas (NUMERIC): `precipitacao`, `pressao`, `pressao_max_ant`, `pressao_min_ant`, `radiacao`, `temp_ar`, `temp_orvalho`, `temp_max_ant`, `temp_min_ant`, `temp_orvalho_max_ant`, `temp_orvalho_min_ant`, `umidade_max_ant`, `umidade_min_ant`, `umidade_ar`, `vento_dir`, `vento_rajada`, `vento_vel`. |
 | `ingestao_status` | Controle de ingestão: `arquivo` (TEXT PK), `total_linhas` (BIGINT), `processado_em` (TIMESTAMPTZ), `status` (TEXT). Permite reiniciar o pipeline só dos arquivos pendentes. |
-| `estacoes` | **Dimensão** de estações (star schema): `nome` (TEXT PK = `DC_NOME` do INMET, chave de join com `dados_estacoes.cidade`), `cod_estacao` (código oficial INMET), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `sincronizar_estacoes.py`. |
+| `estacoes` | **Dimensão** de estações (star schema): `cod_estacao` (TEXT PK = `CD_ESTACAO` oficial do INMET, chave de join com `dados_estacoes.estacao`), `nome` (`DC_NOME` da cidade/estação), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `sincronizar_estacoes.py`. |
 
 **Dimensão de Estações (`estacoes`)**
 -------------------------------------
-Para habilitar mapas (latitude/longitude) e filtros por UF/tipo no Power BI/Metabase, o projeto traz uma **tabela-dimensão** `estacoes`, separada da tabela-fato `dados_estacoes`. O join é por **nome da cidade**: `estacoes.nome` (= `DC_NOME` do INMET) = `dados_estacoes.cidade`.
+Para habilitar mapas (latitude/longitude), análises de altitude e filtros por UF/tipo no Power BI/Metabase, o projeto traz uma **tabela-dimensão** `estacoes`, separada da tabela-fato `dados_estacoes`. O join é feito pelo **código oficial da estação**: `estacoes.cod_estacao` (= `CD_ESTACAO` do INMET) = `dados_estacoes.estacao`.
 
 - Metadados vindos do **endpoint oficial do INMET** (sem autenticação):
   - `https://apitempo.inmet.gov.br/estacoes/M` (manuais/convencionais)
   - `https://apitempo.inmet.gov.br/estacoes/T` (automáticas)
-- `sincronizar_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.nome` (idempotente — roda quantas vezes quiser).
-- **Cobertura:** das ~563 cidades em `dados_estacoes`, ~546 casam com `estacoes.nome` (~96,6%). As ~17 restantes divergem por acento/maiúsculas/sufixos no nome (ex.: `BELO HORIZONTE (PAMPULHA)`, `Paty do Alferes - Avelar`) e podem ser ajustadas com um join tolerante no futuro.
+- `sincronizar_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `DC_NOME`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.cod_estacao` (idempotente — roda quantas vezes quiser).
+- **Múltiplas estações por cidade e precisão de join:** usar `cod_estacao` como chave primária permite que um mesmo município possua estações **automáticas e convencionais** simultaneamente na dimensão (ex.: Brasília com `A001` automática e `83377` convencional) sem sobrescrita e sem multiplicação de linhas (*fan-out*) no `JOIN`, além de eliminar falhas de cruzamento por acentuação, caixa ou sufixos no nome da cidade.
 
 **Analytics**
 -------------
@@ -146,7 +146,7 @@ A pasta `/analytics` concentra a camada analítica do projeto:
 ### 1. Subir o banco (Docker)
 ```bash
 cp .env.example .env
-docker compose up -d
+docker compose up -d --wait
 ```
 
 ### 2. Criar ambiente virtual (`venv`), instalar dependências e ingerir
@@ -227,7 +227,7 @@ O projeto foi desenhado para rodar **100% localmente via Docker** sem exigir inf
   - **Ingestão:** execução via *Cloud Functions* ou *Cloud Run* disparada por eventos (ex.: chegada de novos arquivos no Cloud Storage).
   - **Armazenamento:** exportação/carga do TimescaleDB ou GCS para o *BigQuery* como Data Warehouse analítico.
   - **Orquestração:** agendamento e retry com *Cloud Composer (Airflow)* ou *Cloud Scheduler*.
-- **Join tolerante de estações:** normalização de acentos, caixa e sufixos entre `dados_estacoes.cidade` e `estacoes.nome` para cobrir as ~17 estações divergentes.
+- **Ingestão de CSVs de estações convencionais:** estender o parser de `transform.py` para suportar também o layout histórico das estações manuais (códigos WMO numéricos), cruzando diretamente com os registros `tipo = 'Convencional'` já catalogados na dimensão `estacoes`.
 - **Testes de integração em container:** execução ponta a ponta contra um TimescaleDB real no CI validando `create_hypertable`, precisão `NUMERIC(x,y)` e consultas `time_bucket`.
 
 

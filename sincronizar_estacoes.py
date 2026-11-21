@@ -4,31 +4,48 @@ Fontes oficiais (endpoint publico do INMET):
   - https://apitempo.inmet.gov.br/estacoes/M  (manuais/convencionais)
   - https://apitempo.inmet.gov.br/estacoes/T  (automaticas)
 
-Idempotente: roda quantas vezes quiser (UPSERT em 'nome').
+Idempotente: roda quantas vezes quiser (UPSERT em 'cod_estacao').
+Permite multiplas estacoes (Automatica e Convencional) na mesma cidade.
 NAO toca em dados_estacoes (tabela de fatos) -- so cria/atualiza a dimensao.
 
-Chave de join com dados_estacoes: estacoes.nome (DC_NOME) = dados_estacoes.cidade
+Chave de join com dados_estacoes: estacoes.cod_estacao (CD_ESTACAO) = dados_estacoes.estacao
 """
 import logging
 import os
 import time
+from collections.abc import Sequence
+from typing import Any
+
 import requests
 
 from db import get_conn
 
 logger = logging.getLogger("sincronizar_estacoes")
 
-ENDPOINTS = [
+ENDPOINTS: list[str] = [
     "https://apitempo.inmet.gov.br/estacoes/M",
     "https://apitempo.inmet.gov.br/estacoes/T",
 ]
 
 # Ordem das colunas do INSERT (deve bater com a tabela 'estacoes')
-COLS = ["nome", "cod_estacao", "uf", "latitude", "longitude",
-        "altitude", "tipo", "situacao"]
+COLS: list[str] = [
+    "nome", "cod_estacao", "uf", "latitude", "longitude",
+    "altitude", "tipo", "situacao",
+]
+
+EstacaoRow = tuple[
+    str | None,
+    str,
+    str | None,
+    float | None,
+    float | None,
+    float | None,
+    str | None,
+    str | None,
+]
 
 
-def _to_float(v):
+def _to_float(v: Any) -> float | None:
     """Converte para float ou None (campos VL_* do INMET vêm como string)."""
     if v is None or v == "":
         return None
@@ -38,10 +55,10 @@ def _to_float(v):
         return None
 
 
-def coletar():
+def coletar() -> list[EstacaoRow]:
     """Retorna lista de tuplas em COLS, sem duplicar cod_estacao entre endpoints."""
-    rows = []
-    visto = set()
+    rows: list[EstacaoRow] = []
+    visto: set[str] = set()
     for url in ENDPOINTS:
         logger.info("Consultando API INMET: url=%s", url)
         resp = requests.get(url, timeout=30)
@@ -54,8 +71,8 @@ def coletar():
                 continue
             visto.add(cod)
             rows.append((
-                st.get("DC_NOME"),       # nome (PK / join)
-                cod,                     # cod_estacao
+                st.get("DC_NOME"),       # nome (cidade/estacao)
+                cod,                     # cod_estacao (PK / join)
                 st.get("SG_ESTADO"),     # uf
                 _to_float(st.get("VL_LATITUDE")),
                 _to_float(st.get("VL_LONGITUDE")),
@@ -72,14 +89,14 @@ def coletar():
     return rows
 
 
-def upsert(rows):
-    """Insere ou atualiza em lote (UPSERT em 'nome')."""
+def upsert(rows: Sequence[EstacaoRow]) -> None:
+    """Insere ou atualiza em lote (UPSERT em 'cod_estacao')."""
     sql = """
         INSERT INTO estacoes (nome, cod_estacao, uf, latitude, longitude,
                               altitude, tipo, situacao)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (nome) DO UPDATE SET
-            cod_estacao = EXCLUDED.cod_estacao,
+        ON CONFLICT (cod_estacao) DO UPDATE SET
+            nome        = EXCLUDED.nome,
             uf          = EXCLUDED.uf,
             latitude    = EXCLUDED.latitude,
             longitude   = EXCLUDED.longitude,
@@ -92,7 +109,7 @@ def upsert(rows):
         conn.commit()
 
 
-def main():
+def main() -> None:
     logging.basicConfig(
         level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",

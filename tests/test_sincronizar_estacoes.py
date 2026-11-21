@@ -53,6 +53,16 @@ def test_coletar_consulta_ambos_endpoints_e_deduplica_por_cd_estacao(monkeypatch
             "CD_SITUACAO": "Operante",
         },
         {
+            "DC_NOME": "BRASILIA",
+            "CD_ESTACAO": "A001",  # automatica na mesma cidade -> deve ser mantida
+            "SG_ESTADO": "DF",
+            "VL_LATITUDE": "-15.789",
+            "VL_LONGITUDE": "-47.925",
+            "VL_ALTITUDE": "1160.9",
+            "TP_ESTACAO": "Automatica",
+            "CD_SITUACAO": "Operante",
+        },
+        {
             "DC_NOME": "GOIANIA",
             "CD_ESTACAO": "A002",
             "SG_ESTADO": "GO",
@@ -82,6 +92,7 @@ def test_coletar_consulta_ambos_endpoints_e_deduplica_por_cd_estacao(monkeypatch
     ]
     assert rows == [
         ("BRASILIA", "83377", "DF", -15.789, -47.925, 1160.9, "Convencional", "Operante"),
+        ("BRASILIA", "A001", "DF", -15.789, -47.925, 1160.9, "Automatica", "Operante"),
         ("GOIANIA", "A002", "GO", -16.64, -49.22, None, "Automatica", "Operante"),
     ]
     assert all(len(r) == len(sincronizar_estacoes.COLS) for r in rows)
@@ -114,7 +125,7 @@ def test_upsert_executa_insert_on_conflict_e_fecha_recursos(monkeypatch):
 
     sql, arg_rows = cur.executemany.call_args.args
     assert "INSERT INTO estacoes" in sql
-    assert "ON CONFLICT (nome) DO UPDATE SET" in sql
+    assert "ON CONFLICT (cod_estacao) DO UPDATE SET" in sql
     assert arg_rows == rows
     conn.commit.assert_called_once()
     conn.cursor.return_value.__exit__.assert_called_once()

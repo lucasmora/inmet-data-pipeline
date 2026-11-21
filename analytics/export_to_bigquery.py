@@ -1,8 +1,16 @@
+"""Integracao arquitetural para exportacao do TimescaleDB ao Google BigQuery.
+
+Em producao:
+  1. Autenticacao via Service Account (GOOGLE_APPLICATION_CREDENTIALS).
+  2. Execucao em Cloud Run / Cloud Functions ou Airflow (Cloud Composer).
+  3. Defina `dry_run=False` (ou `BQ_DRY_RUN=false`) com `google-cloud-bigquery` instalado.
+"""
+
 import logging
 import os
 
-import pandas as pd
 from dotenv import load_dotenv
+import pandas as pd
 
 try:
     from google.cloud import bigquery
@@ -11,38 +19,40 @@ except ImportError:
 
 logger = logging.getLogger("export_to_bigquery")
 
-# --- STUB / ARQUITETURA ---
-# Este script demonstra como integrar dados do TimescaleDB (Local)
-# para o Google BigQuery (Cloud).
-#
-# Em produção:
-# 1. Autenticação via Service Account (variável GOOGLE_APPLICATION_CREDENTIALS)
-# 2. Pipeline rodando em Cloud Run/Functions ou Airflow
-# 3. Carga via Dataframe (ou job de LOAD GCS -> BigQuery)
 
-
-def exportar_para_bq(df: pd.DataFrame, table_id: str):
-    """Exporta um DataFrame para o BigQuery.
+def exportar_para_bq(
+    df: pd.DataFrame,
+    table_id: str,
+    *,
+    dry_run: bool = True,
+) -> None:
+    """Exporta um DataFrame para o BigQuery (ou simula em modo dry_run/stub).
 
     Args:
-        df: DataFrame com os dados meteorológicos.
-        table_id: ID da tabela no BQ (projeto.dataset.tabela).
+        df: DataFrame com os dados meteorologicos.
+        table_id: ID da tabela no BigQuery (`projeto.dataset.tabela`).
+        dry_run: Quando True (padrao), apenas registra a operacao em log sem
+            enviar dados para a nuvem.
     """
     try:
-        if bigquery is None:
+        if dry_run or bigquery is None:
+            motivo = (
+                "dry_run=True" if dry_run else "google-cloud-bigquery nao instalado"
+            )
             logger.info(
-                "Simulando exportação para BigQuery (stub; google-cloud-bigquery não instalado): "
-                "table_id=%s linhas=%d",
+                "Simulando exportacao para BigQuery (%s): table_id=%s linhas=%d",
+                motivo,
                 table_id,
                 len(df),
             )
             return
 
-        # Inicializa o cliente (assume GOOGLE_APPLICATION_CREDENTIALS setada)
-        # client = bigquery.Client()
-        logger.info("Simulando exportação para BigQuery: table_id=%s linhas=%d", table_id, len(df))
-        # job = client.load_table_from_dataframe(df, table_id)
-        # job.result()  # Aguarda o job finalizar
+        client = bigquery.Client()
+        logger.info(
+            "Exportando para BigQuery: table_id=%s linhas=%d", table_id, len(df)
+        )
+        job = client.load_table_from_dataframe(df, table_id)
+        job.result()
         logger.info("Dados exportados com sucesso: table_id=%s", table_id)
 
     except Exception:
@@ -50,9 +60,8 @@ def exportar_para_bq(df: pd.DataFrame, table_id: str):
         raise
 
 
-if __name__ == "__main__":
-    # Carrega variáveis
-    load_dotenv("../.env")
+def main() -> None:
+    load_dotenv()
 
     logging.basicConfig(
         level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
@@ -60,18 +69,12 @@ if __name__ == "__main__":
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 1. Simulação: Busca dados do seu banco local (ex: amostra)
-    # (Reutiliza a conexão do db.py do seu projeto)
-    logger.info("Lendo dados do TimescaleDB local...")
-    # data = pd.read_sql("SELECT * FROM dados_estacoes LIMIT 1000", conn)
+    table_id = os.getenv("BQ_TABLE_ID", "seu-projeto-gcp.meteo.dados_inmet")
+    dry_run = os.getenv("BQ_DRY_RUN", "true").lower() not in ("0", "false", "no")
 
-    # Placeholder: Criando um DF fake para demonstrar o schema
-    df_stub = pd.DataFrame({"data": ["2026-08-18"], "temp": [25.5]})
+    df_amostra = pd.DataFrame({"data": ["2024-01-15"], "temp_ar": [25.5]})
+    exportar_para_bq(df_amostra, table_id, dry_run=dry_run)
 
-    # 2. Executa export
-    # exportar_para_bq(df_stub, "seu-projeto-gcp.meteo.dados_inmet")
 
-    logger.info(
-        "Script de exportação em modo stub (linhas=%d); descomente o bloco de 'client' para rodar em GCP.",
-        len(df_stub),
-    )
+if __name__ == "__main__":
+    main()

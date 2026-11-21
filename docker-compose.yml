@@ -19,6 +19,11 @@ services:
       - tsdata:/var/lib/postgresql/data
       # scripts de inicializacao: rodam so no PRIMEIRO boot
       - ./db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-inmet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:

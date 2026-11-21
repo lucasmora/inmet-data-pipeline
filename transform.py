@@ -5,10 +5,12 @@ mas operando POR CHUNK (Big Data: nunca carrega o dataset inteiro na memoria).
 """
 import re
 from decimal import Decimal
+from typing import Any
+
 import pandas as pd
 
 # Metadados extraidos do NOME do arquivo (ex: INMET_CO_DF_A001_BRASILIA_...)
-PADRAO_ARQUIVO = re.compile(
+PADRAO_ARQUIVO: re.Pattern[str] = re.compile(
     r"INMET_(?P<regiao>[A-Z]{1,2})_"
     r"(?P<estado>[A-Z]{2})_"
     r"(?P<estacao>[A-Z]\d{3})_"
@@ -17,7 +19,7 @@ PADRAO_ARQUIVO = re.compile(
 
 # Ordem das colunas APOS skiprows=8 e descartar a ultima coluna vazia do INMET.
 # Usamos posicao (nao nome) para nao depender de acentos/encoding do cabecalho.
-COLUNAS_BRUTAS = [
+COLUNAS_BRUTAS: list[str] = [
     "Data", "Hora UTC",
     "precipitacao", "pressao", "pressao_max_ant", "pressao_min_ant",
     "radiacao", "temp_ar", "temp_orvalho", "temp_max_ant", "temp_min_ant",
@@ -25,16 +27,16 @@ COLUNAS_BRUTAS = [
     "umidade_min_ant", "umidade_ar", "vento_dir", "vento_rajada", "vento_vel",
 ]
 
-NUMERICAS = COLUNAS_BRUTAS[2:]  # as 17 medicoes
+NUMERICAS: list[str] = COLUNAS_BRUTAS[2:]  # as 17 medicoes
 
 
-def extrair_metadados(nome_arquivo):
+def extrair_metadados(nome_arquivo: str) -> dict[str, str] | None:
     """Retorna dict {regiao, estado, estacao, cidade} ou None."""
     m = PADRAO_ARQUIVO.search(nome_arquivo)
     return m.groupdict() if m else None
 
 
-def parse_chunk(df, meta):
+def parse_chunk(df: pd.DataFrame, meta: dict[str, str]) -> pd.DataFrame:
     """Recebe um chunk bruto do CSV INMET e devolve DataFrame canonico.
 
     `df` ja vem com skiprows=8, sep=';', encoding='latin_1'.
@@ -66,7 +68,7 @@ def parse_chunk(df, meta):
     # O psycopg3 em COPY binario exige Decimal para colunas numeric (nao aceita
     # float), preservando precisao. Converte da string para evitar artefatos de
     # ponto flutuante.
-    def _para_decimal(v):
+    def _para_decimal(v: Any) -> Decimal | None:
         if v is None or (isinstance(v, str) and v.strip() in ("", "nan", "None")):
             return None
         return Decimal(str(v))
