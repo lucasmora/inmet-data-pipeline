@@ -6,7 +6,7 @@
 ![TimescaleDB](https://img.shields.io/badge/TimescaleDB-PostgreSQL--17-336791?style=flat-square&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=flat-square&logo=docker&logoColor=white)
 [![CI](https://github.com/lucasmora/inmet-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasmora/inmet-data-pipeline/actions/workflows/ci.yml)
-![Licença](https://img.shields.io/badge/Licen%C3%A7a-MIT-22c55e?style=flat-square)
+[![Licença](https://img.shields.io/badge/Licen%C3%A7a-MIT-22c55e?style=flat-square)](LICENSE)
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-1.1.0-blue?style=flat-square)
 
 </div>
@@ -29,7 +29,7 @@ Os dados brutos são baixados do **portal oficial do INMET** (Instituto Nacional
 |--------|------------|
 | **Linguagem** | Python ≥ 3.11 |
 | **ETL/Transform** | Pandas (`read_csv` em *chunks*) + `re` (parsing de metadados) |
-| **Banco** | TimescaleDB (extensão de PostgreSQL 17 para séries temporais) |
+| **Banco** | TimescaleDB (extensão de PostgreSQL 17 para séries temporais) rodando em Docker |
 | **Driver** | `psycopg[binary]` 3.x — *COPY* binário de alta performance |
 | **Container** | Docker + docker compose (apenas o banco: PostgreSQL 17 com TimescaleDB pré-compilado) |
 | **Config** | `python-dotenv` (variáveis de ambiente em `.env`) |
@@ -122,23 +122,6 @@ postgresql+psycopg://postgres:***@localhost:5433/inmet
 | `ingestao_status` | Controle de ingestão: `arquivo` (TEXT PK), `total_linhas` (BIGINT), `processado_em` (TIMESTAMPTZ), `status` (TEXT). Permite reiniciar o pipeline só dos arquivos pendentes. |
 | `estacoes` | **Dimensão** de estações (star schema): `nome` (TEXT PK = `DC_NOME` do INMET, chave de join com `dados_estacoes.cidade`), `cod_estacao` (código oficial INMET), `uf`, `latitude`, `longitude`, `altitude`, `tipo`, `situacao`. Populada por `sincronizar_estacoes.py`. |
 
-**Analytics**
--------------
-A pasta `/analytics` concentra a camada analítica do projeto:
-- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
-- `analytics/export_to_bigquery.py`: *Stub* de arquitetura para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
-
-**Próximos Passos (Roadmap)**
------------------------------
-O projeto foi desenhado para rodar **100% localmente via Docker** sem exigir infraestrutura ou custos em nuvem. Como evoluções planejadas para um ambiente produtivo ou futuras versões, ficam mapeados os seguintes pontos:
-
-- **Integração Cloud / Google BigQuery (`analytics/export_to_bigquery.py`):** o script atual funciona como um *stub* arquitetural documentando o contrato de exportação via `google-cloud-bigquery` (sem carga ativa em nuvem nesta versão para manter o projeto gratuito e auto-contido). Em um cenário cloud, a evolução natural inclui:
-  - **Ingestão:** execução via *Cloud Functions* ou *Cloud Run* disparada por eventos (ex.: chegada de novos arquivos no Cloud Storage).
-  - **Armazenamento:** exportação/carga do TimescaleDB ou GCS para o *BigQuery* como Data Warehouse analítico.
-  - **Orquestração:** agendamento e retry com *Cloud Composer (Airflow)* ou *Cloud Scheduler*.
-- **Join tolerante de estações:** normalização de acentos, caixa e sufixos entre `dados_estacoes.cidade` e `estacoes.nome` para cobrir as ~17 estações divergentes.
-- **Testes de integração em container:** execução ponta a ponta contra um TimescaleDB real no CI validando `create_hypertable`, precisão `NUMERIC(x,y)` e consultas `time_bucket`.
-
 **Dimensão de Estações (`estacoes`)**
 -------------------------------------
 Para habilitar mapas (latitude/longitude) e filtros por UF/tipo no Power BI/Metabase, o projeto traz uma **tabela-dimensão** `estacoes`, separada da tabela-fato `dados_estacoes`. O join é por **nome da cidade**: `estacoes.nome` (= `DC_NOME` do INMET) = `dados_estacoes.cidade`.
@@ -148,7 +131,13 @@ Para habilitar mapas (latitude/longitude) e filtros por UF/tipo no Power BI/Meta
   - `https://apitempo.inmet.gov.br/estacoes/T` (automáticas)
 - `sincronizar_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.nome` (idempotente — roda quantas vezes quiser).
 - **Cobertura:** das ~563 cidades em `dados_estacoes`, ~546 casam com `estacoes.nome` (~96,6%). As ~17 restantes divergem por acento/maiúsculas/sufixos no nome (ex.: `BELO HORIZONTE (PAMPULHA)`, `Paty do Alferes - Avelar`) e podem ser ajustadas com um join tolerante no futuro.
-- A tabela **não** é hypertable: é dimensão pequena (~700 linhas), não série temporal.
+
+**Analytics**
+-------------
+A pasta `/analytics` concentra a camada analítica do projeto:
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
+- `analytics/export_to_bigquery.py`: *Stub* de arquitetura para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
+
 
 **Como Rodar**
 -------------
@@ -230,19 +219,18 @@ ruff>=0.8
 
 O pacote `google-cloud-bigquery` permanece opcional (comentado no `requirements.txt` e isolado no extra `bigquery` do `pyproject.toml`) para quem quiser estender o *stub* `analytics/export_to_bigquery.py`.
 
+**Próximos Passos (Roadmap)**
+-----------------------------
+O projeto foi desenhado para rodar **100% localmente via Docker** sem exigir infraestrutura ou custos em nuvem. Como evoluções planejadas para um ambiente produtivo ou futuras versões, ficam mapeados os seguintes pontos:
+
+- **Integração Cloud / Google BigQuery (`analytics/export_to_bigquery.py`):** o script atual funciona como um *stub* arquitetural documentando o contrato de exportação via `google-cloud-bigquery` (sem carga ativa em nuvem nesta versão para manter o projeto gratuito e auto-contido). Em um cenário cloud, a evolução natural inclui:
+  - **Ingestão:** execução via *Cloud Functions* ou *Cloud Run* disparada por eventos (ex.: chegada de novos arquivos no Cloud Storage).
+  - **Armazenamento:** exportação/carga do TimescaleDB ou GCS para o *BigQuery* como Data Warehouse analítico.
+  - **Orquestração:** agendamento e retry com *Cloud Composer (Airflow)* ou *Cloud Scheduler*.
+- **Join tolerante de estações:** normalização de acentos, caixa e sufixos entre `dados_estacoes.cidade` e `estacoes.nome` para cobrir as ~17 estações divergentes.
+- **Testes de integração em container:** execução ponta a ponta contra um TimescaleDB real no CI validando `create_hypertable`, precisão `NUMERIC(x,y)` e consultas `time_bucket`.
+
+
 **Licença**
 ----------
-MIT. Sinta-se livre para usar, modificar e distribuir, contanto que essa licença seja mantida.
-
-**Como este projeto foi desenvolvido**
---------------------------------------
-- Definição dos requisitos e funcionalidades por mim.
-- Desenvolvimento assistido por agentes e ferramentas de IA.
-- Revisão e adaptação manual de todo o código gerado.
-- Testes e validação das funcionalidades.
-- Documentação escrita e mantida por mim.
-
-**Versões/Alterações**
----------------------
-- **1.0.0** – Versão inicial: pipeline ETL incremental (ingestão idempotente via COPY binário), TimescaleDB em Docker (hypertable + ingestao_status), transform na borda e 4 consultas analíticas de série temporal.
-- **1.1.0** – Tabela-dimensão `estacoes` (star schema) alimentada por `sincronizar_estacoes.py` a partir do endpoint oficial do INMET; habilita mapas (lat/long) e filtros por UF/tipo no Power BI/Metabase.
+Este projeto está sob a licença MIT. Para mais detalhes, consulte o arquivo [LICENSE](LICENSE).  
