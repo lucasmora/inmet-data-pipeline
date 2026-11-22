@@ -9,7 +9,7 @@ São **5 arquivos** (128 linhas cada, **640 registros no total**), cobrindo **ja
 | Arquivo | Região | UF | Estação (`estacoes.cod_estacao`) | Cidade (`estacoes.nome`) | Altitude aproximada |
 |---------|--------|----|---------|--------------------------|---------------------|
 | `INMET_N_AM_A101_MANAUS_01-01-2024_A_30-04-2024.CSV` | `N` | `AM` | `A101` | `MANAUS` | ~61 m (`< 200 m`) |
-| `INMET_NE_PE_A307_PETROLINA_01-01-2024_A_30-04-2024.CSV` | `NE` | `PE` | `A307` | `PETROLINA` | ~371 m (`200–500 m`) |
+| `INMET_NE_PE_A329_CABROBO_01-01-2024_A_30-04-2024.CSV` | `NE` | `PE` | `A329` | `CABROBO` | ~343 m (`200–500 m`) |
 | `INMET_S_RS_A839_PASSO FUNDO_01-01-2024_A_30-04-2024.CSV` | `S` | `RS` | `A839` | `PASSO FUNDO` | ~681 m (`500–800 m`) |
 | `INMET_CO_DF_A001_BRASILIA_01-01-2024_A_30-04-2024.CSV` | `CO` | `DF` | `A001` | `BRASILIA` | ~1161 m (`800–1200 m`) |
 | `INMET_SE_MG_A509_MONTE VERDE_01-01-2024_A_30-04-2024.CSV` | `SE` | `MG` | `A509` | `MONTE VERDE` | ~1545 m (`≥ 1200 m`) |

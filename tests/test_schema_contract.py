@@ -6,7 +6,6 @@ import db
 import sincronizar_estacoes
 from transform import parse_chunk
 
-
 DDL_PATH = Path(__file__).resolve().parent.parent / "db-init" / "01-init-timescaledb.sql"
 
 
@@ -45,10 +44,12 @@ def test_ddl_dados_estacoes_alinha_com_db_columns_e_copy_types():
     nomes_ddl = [nome for nome, _ in colunas_ddl]
     assert nomes_ddl == db.COLUMNS
 
-    for (nome, tipo_sql), tipo_copy in zip(colunas_ddl, db.COPY_TYPES):
+    for (nome, tipo_sql), tipo_copy in zip(colunas_ddl, db.COPY_TYPES, strict=True):
         tipo_upper = tipo_sql.upper()
         if tipo_copy == "timestamptz":
-            assert tipo_upper.startswith("TIMESTAMPTZ"), f"{nome}: esperado TIMESTAMPTZ, veio {tipo_sql}"
+            assert tipo_upper.startswith("TIMESTAMPTZ"), (
+                f"{nome}: esperado TIMESTAMPTZ, veio {tipo_sql}"
+            )
         elif tipo_copy == "text":
             assert tipo_upper.startswith("TEXT"), f"{nome}: esperado TEXT, veio {tipo_sql}"
         elif tipo_copy == "numeric":

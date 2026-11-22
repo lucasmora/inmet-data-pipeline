@@ -4,7 +4,6 @@ import pytest
 
 from transform import COLUNAS_BRUTAS
 
-
 INMET_HEADER_METADATA = [
     "REGIAO:;CO",
     "UF:;DF",
@@ -106,8 +105,7 @@ def make_inmet_csv(tmp_path):
         for row in rows or []:
             lines.append(";".join(row) + header_suffix)
 
-        for extra in raw_extra_lines or []:
-            lines.append(extra)
+        lines.extend(raw_extra_lines or [])
 
         path.write_text("\n".join(lines) + "\n", encoding="latin_1")
         return path

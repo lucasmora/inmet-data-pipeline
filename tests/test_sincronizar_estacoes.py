@@ -141,7 +141,9 @@ def test_upsert_fecha_recursos_mesmo_em_excecao(monkeypatch):
     monkeypatch.setattr(sincronizar_estacoes, "get_conn", lambda: conn)
 
     with pytest.raises(RuntimeError, match="erro simulado"):
-        sincronizar_estacoes.upsert([("BRASILIA", "A001", "DF", -15.78, -47.92, 1160.0, "Automatica", "Operante")])
+        sincronizar_estacoes.upsert(
+            [("BRASILIA", "A001", "DF", -15.78, -47.92, 1160.0, "Automatica", "Operante")]
+        )
 
     conn.commit.assert_not_called()
     conn.cursor.return_value.__exit__.assert_called_once()

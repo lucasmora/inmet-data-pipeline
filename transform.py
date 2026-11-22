@@ -1,7 +1,7 @@
 """Transformacao dos CSVs brutos do INMET para o formato canonico da tabela.
 
-Esta logica reutiliza o que existia em concatenar_dados.py / limpar_dados.py,
-mas operando POR CHUNK (Big Data: nunca carrega o dataset inteiro na memoria).
+Opera por chunk (pandas.read_csv com chunksize) para manter o uso de memoria
+constante mesmo ao processar milhoes de registros.
 """
 import re
 from decimal import Decimal
@@ -64,14 +64,17 @@ def parse_chunk(df: pd.DataFrame, meta: dict[str, str]) -> pd.DataFrame:
     )
     df = df.drop(columns=["Data", "Hora UTC"])
 
-    # numericas: virgula -> ponto, vazios -> None, e converte para Decimal.
+    # numericas: virgula -> ponto, vazios/sentinelas (-9999) -> None, e converte para Decimal.
     # O psycopg3 em COPY binario exige Decimal para colunas numeric (nao aceita
     # float), preservando precisao. Converte da string para evitar artefatos de
     # ponto flutuante.
     def _para_decimal(v: Any) -> Decimal | None:
-        if v is None or (isinstance(v, str) and v.strip() in ("", "nan", "None")):
+        if v is None or pd.isna(v) or (isinstance(v, str) and v.strip() in ("", "nan", "None")):
             return None
-        return Decimal(str(v))
+        d = Decimal(str(v))
+        if d.is_nan() or d <= Decimal("-999"):
+            return None
+        return d
 
     for col in NUMERICAS:
         s = (

@@ -1,5 +1,5 @@
 """Testes unitários para extração de metadados e transformação de chunks (transform.py)."""
-from datetime import timezone
+from datetime import UTC
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -123,7 +123,7 @@ def test_parse_chunk_converte_data_hora_para_utc(build_raw_df, meta_brasilia):
 
     ts0 = resultado.iloc[0]["data_hora"]
     ts1 = resultado.iloc[1]["data_hora"]
-    assert ts0.tzinfo == timezone.utc
+    assert ts0.tzinfo == UTC
     assert ts0 == pd.Timestamp("2023-01-01 00:00:00", tz="UTC")
     assert ts1 == pd.Timestamp("2023-12-31 23:00:00", tz="UTC")
 
@@ -145,7 +145,7 @@ def test_parse_chunk_converte_numericas_para_decimal_sem_artefatos_float(
     assert isinstance(linha["precipitacao"], Decimal)
     assert linha["precipitacao"] == Decimal("0.1")
     assert linha["radiacao"] == Decimal("1234.56")
-    assert linha["umidade_ar"] == Decimal("100")
+    assert linha["umidade_ar"] == Decimal(100)
 
     for col in NUMERICAS:
         assert isinstance(linha[col], Decimal)
@@ -164,6 +164,22 @@ def test_parse_chunk_converte_nulos_e_vazios_para_none_real(build_raw_df, meta_b
 
     for col in ("precipitacao", "pressao", "pressao_max_ant", "pressao_min_ant"):
         assert linha[col] is None
+
+
+@pytest.mark.parametrize("sentinela", ["-9999", "-9999,0", " -9999 ", "-999"])
+def test_parse_chunk_converte_valores_sentinela_inmet_para_none(
+    build_raw_df, meta_brasilia, sentinela
+):
+    row = default_inmet_row(temp_ar=sentinela)
+    row[6] = sentinela  # radiacao
+    raw = build_raw_df([row])
+
+    resultado = parse_chunk(raw, meta_brasilia)
+    linha = resultado.iloc[0]
+
+    assert linha["temp_ar"] is None
+    assert linha["radiacao"] is None
+    assert linha["pressao"] == Decimal("887.2")
 
 
 def test_parse_chunk_falha_em_data_malformada(build_raw_df, meta_brasilia):

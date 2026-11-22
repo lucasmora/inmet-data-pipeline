@@ -17,11 +17,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 import pandas as pd
 import psycopg
+from dotenv import load_dotenv
 
-from db import get_conn, copy_rows
+from db import copy_rows, get_conn
 from transform import extrair_metadados, parse_chunk
 
 load_dotenv()
@@ -63,8 +63,7 @@ def ingerir_arquivo(cur: psycopg.Cursor[Any], caminho: str, meta: dict[str, str]
         on_bad_lines="skip",
     ):
         df = parse_chunk(chunk, meta)
-        for row in df.itertuples(index=False, name=None):
-            buffer.append(row)
+        buffer.extend(df.itertuples(index=False, name=None))
         while len(buffer) >= BATCH_SIZE:
             lote = buffer[:BATCH_SIZE]
             del buffer[:BATCH_SIZE]

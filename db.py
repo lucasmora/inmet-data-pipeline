@@ -7,8 +7,8 @@ import os
 from collections.abc import Sequence
 from typing import Any
 
-from dotenv import load_dotenv
 import psycopg
+from dotenv import load_dotenv
 
 load_dotenv()
 
