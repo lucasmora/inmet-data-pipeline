@@ -47,6 +47,20 @@ flowchart LR
     G --> H
 ```
 
+**Benchmark (Base Completa INMET 2024)**
+----------------------------------------
+Métricas medidas em execução real ponta a ponta contra o **TimescaleDB (PostgreSQL 17)** em Docker local (Windows), com `CHUNK_SIZE=100000`, `BATCH_SIZE=50000` e carga via protocolo `COPY FROM STDIN (FORMAT BINARY)`:
+
+| Camada | Métrica | Resultado Medido |
+|---|---|---|
+| **Ingestão (`ingest.py`)** | Volume processado | **565 CSVs** (`386,7 MiB` brutos) → **4.962.960 registros** (5 regiões, 27 UFs) |
+| **Ingestão (`ingest.py`)** | Tempo total e vazão | **245,73 s** (`4 min 06 s`) · **~20.197 linhas/s** (`0` erros) |
+| **Memória (Python)** | Pico de RAM (`PeakWorkingSetSize`) | **121,20 MiB** constantes ao longo dos 565 arquivos |
+| **Dimensão (`sincronizar_estacoes.py`)** | Coleta + UPSERT na API INMET | **752 estações** (`667` automáticas + `85` convencionais) em **1,42 s** |
+| **Armazenamento (TimescaleDB)** | Hypertable `dados_estacoes` | **1,35 GiB** (`698,7 MiB` tabela + `679,3 MiB` índices) em **53 chunks** |
+| **Analytics (`EXPLAIN ANALYZE`)** | Agregações temporais e por UF (`4,96M` linhas) | **936 ms** (`time_bucket` mensal/região) · **758 ms** (precipitação/UF) |
+| **Analytics (`EXPLAIN ANALYZE`)** | `INNER JOIN estacoes` por altitude (`4,96M` linhas) | **8,31 s** (`d.estacao = e.cod_estacao` + `COUNT(DISTINCT)`) |
+
 **Estrutura do Projeto**
 -----------------------
 ```
@@ -62,6 +76,8 @@ inmet-data-pipeline/
 │   └── INMET_*.CSV                # 5 CSVs de amostra (1 por região/faixa de altitude, 640 linhas)
 ├── db-init/
 │   └── 01-init-timescaledb.sql    # Extensão + hypertable dados_estacoes + ingestao_status + estacoes
+├── docs/
+│   └── images/                    # Gráficos exportados do EDA_INMET.ipynb (base completa 2024)
 ├── tests/
 │   ├── README.md                  # Escopo e estratégia da suíte de testes
 │   ├── conftest.py                # Fixtures compartilhadas (CSVs e DataFrames sintéticos)
@@ -129,14 +145,27 @@ Para habilitar mapas (latitude/longitude), análises de altitude e filtros por U
 - Metadados vindos do **endpoint oficial do INMET** (sem autenticação):
   - `https://apitempo.inmet.gov.br/estacoes/M` (manuais/convencionais)
   - `https://apitempo.inmet.gov.br/estacoes/T` (automáticas)
-- `sincronizar_estacoes.py` faz GET nos dois endpoints, normaliza os campos (`CD_ESTACAO`, `DC_NOME`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.cod_estacao` (idempotente — roda quantas vezes quiser).
+- `sincronizar_estacoes.py` faz GET nos dois endpoints, converte os campos da API para o formato da tabela (`CD_ESTACAO`, `DC_NOME`, `SG_ESTADO`, `VL_LATITUDE`, `VL_LONGITUDE`, `VL_ALTITUDE`, `TP_ESTACAO`, `CD_SITUACAO`) e faz **UPSERT** em `estacoes.cod_estacao` (idempotente — roda quantas vezes quiser).
 - **Múltiplas estações por cidade e precisão de join:** usar `cod_estacao` como chave primária permite que um mesmo município possua estações **automáticas e convencionais** simultaneamente na dimensão (ex.: Brasília com `A001` automática e `83377` convencional) sem sobrescrita e sem multiplicação de linhas (*fan-out*) no `JOIN`, além de eliminar falhas de cruzamento por acentuação, caixa ou sufixos no nome da cidade.
 
 **Analytics**
 -------------
 A pasta `/analytics` concentra a camada analítica do projeto:
-- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn (temperatura média mensal por região, precipitação acumulada por estado e temperatura média por faixa de altitude).
-- `analytics/export_to_bigquery.py`: *Stub* de arquitetura para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn sobre os **4,96M de registros de 2024**:
+- `analytics/export_to_bigquery.py`: módulo de integração arquitetural com suporte a modo `dry_run` para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
+
+<details open>
+<summary>Visualizações geradas pelo notebook (base histórica 2024 — 565 estações)</summary>
+
+| Temperatura Média Mensal por Região (`time_bucket`) | Precipitação Acumulada Média por Estado |
+|---|---|
+| ![Temperatura Média Mensal por Região](docs/images/01-temperatura-media-regiao.png) | ![Precipitação Acumulada Média por Estado](docs/images/02-precipitacao-acumulada-estado.png) |
+
+**Gradiente Térmico por Faixa de Altitude (`JOIN dados_estacoes × estacoes`)**
+
+![Temperatura Média do Ar por Faixa de Altitude](docs/images/03-temperatura-faixa-altitude.png)
+
+</details>
 
 
 **Como Rodar**
@@ -227,7 +256,6 @@ O projeto foi desenhado para rodar **100% localmente via Docker** sem exigir inf
   - **Ingestão:** execução via *Cloud Functions* ou *Cloud Run* disparada por eventos (ex.: chegada de novos arquivos no Cloud Storage).
   - **Armazenamento:** exportação/carga do TimescaleDB ou GCS para o *BigQuery* como Data Warehouse analítico.
   - **Orquestração:** agendamento e retry com *Cloud Composer (Airflow)* ou *Cloud Scheduler*.
-- **Ingestão de CSVs de estações convencionais:** estender o parser de `transform.py` para suportar também o layout histórico das estações manuais (códigos WMO numéricos), cruzando diretamente com os registros `tipo = 'Convencional'` já catalogados na dimensão `estacoes`.
 - **Testes de integração em container:** execução ponta a ponta contra um TimescaleDB real no CI validando `create_hypertable`, precisão `NUMERIC(x,y)` e consultas `time_bucket`.
 
 
