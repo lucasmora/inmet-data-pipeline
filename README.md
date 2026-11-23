@@ -84,7 +84,7 @@ inmet-data-pipeline/
 │   ├── test_db.py                 # Testes unitários de conexão e COPY binário
 │   ├── test_export_bigquery.py    # Smoke test do stub de exportação ao BigQuery
 │   ├── test_ingest.py             # Testes unitários do orquestrador (chunks, batches, rollback)
-│   ├── test_schema_contract.py    # Contrato de schema entre transform.py, db.py e DDL SQL
+│   ├── test_schema_contract.py    # Contrato de schema entre transform.py, db.py, sincronizar_estacoes.py e DDL SQL
 │   ├── test_sincronizar_estacoes.py # Testes unitários de coleta e UPSERT da dimensão estacoes
 │   └── test_transform.py          # Testes de parsing, Decimal, UTC e CSVs de amostra
 ├── db.py                          # Conexão (.env) + helper de COPY FROM STDIN binário (psycopg3)
@@ -151,7 +151,7 @@ Para habilitar mapas (latitude/longitude), análises de altitude e filtros por U
 **Analytics**
 -------------
 A pasta `/analytics` concentra a camada analítica do projeto:
-- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn sobre os **4,96M de registros de 2024**:
+- `analytics/EDA_INMET.ipynb`: Notebook de Análise Exploratória de Dados (EDA) — conecta no TimescaleDB local via SQLAlchemy, explora as séries temporais com funções TimescaleDB como `time_bucket` e `JOIN`s com a dimensão `estacoes`, e gera visualizações com Matplotlib/Seaborn sobre os **4,96M de registros de 2024**.
 - `analytics/export_to_bigquery.py`: módulo de integração arquitetural com suporte a modo `dry_run` para exportação ao Google BigQuery (veja a seção **Próximos Passos** abaixo).
 
 <details open>
@@ -218,11 +218,13 @@ Mais detalhes sobre o que cada arquivo testa e a estratégia da suíte em [tests
 | `POSTGRES_DB` | `inmet` | Nome do banco |
 | `POSTGRES_HOST` | `localhost` | Host do TimescaleDB |
 | `POSTGRES_PORT` | `5433` | Porta do TimescaleDB |
-| `PASTA_ENTRADA` | `./data` | Pasta com os CSVs do INMET (arquivos `*.CSV`) |
+| `PASTA_ENTRADA` | `./data` | Pasta com os CSVs do INMET (arquivos `*.CSV` / `*.csv`) |
 | `BATCH_SIZE` | `50000` | Linhas por lote no COPY binário |
 | `CHUNK_SIZE` | `100000` | Linhas por chunk do `read_csv` |
 | `LOG_LEVEL` | `INFO` | Nível dos logs estruturados (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5433/inmet` | URL de conexão usada pelo notebook de análise (SQLAlchemy + `psycopg`) |
+| `BQ_TABLE_ID` | `seu-projeto-gcp.meteo.dados_inmet` | ID da tabela de destino no BigQuery (`projeto.dataset.tabela`, opcional) |
+| `BQ_DRY_RUN` | `true` | Quando `true`, simula a exportação ao BigQuery apenas em log (`analytics/export_to_bigquery.py`) |
 
 > O `.env` **não** vai para o git (veja `.gitignore`). Use `.env.example` como template.
 
